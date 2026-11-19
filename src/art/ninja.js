@@ -21,10 +21,10 @@ import { PixBuf, rgb, capsule, disc, poly, line, stamp, compositeGroup, toCanvas
 /* ------------------------------------------------------------------ palette */
 export const NINJA_PAL = {
   ol: '#070812',
-  suit: ['#0b0d20', '#171a36', '#262c58'],               // undersuit (matte indigo)
-  suitB: ['#07081a', '#0f1229', '#1a1f44'],              // back limbs: one step darker
-  armour: ['#2b355e', '#4d5d96', '#8c9fd6', '#dfe8ff'], // plates: dark / mid / light / spec
-  armourB: ['#1a2140', '#29335e', '#43528a'],
+  suit: ['#101330', '#1e2550', '#323d7c'],               // undersuit (matte indigo)
+  suitB: ['#0b0d26', '#161b3e', '#252e62'],              // back limbs: one step darker
+  armour: ['#36437c', '#5e73b8', '#a3b7f0', '#eef3ff'], // plates: dark / mid / light / spec
+  armourB: ['#232c56', '#394888', '#5c70b0'],
   metal: ['#3b3348', '#6f6681', '#b9b0c8'],              // joints / pistons (warm grey)
   mg: ['#8f1259', '#ff3d9d', '#ffa6d6'],                 // scarf / sash magenta
   white: '#ffffff',
@@ -43,10 +43,10 @@ const ACC = {};
 for (const k in NINJA_ACCENT) { const a = NINJA_ACCENT[k]; ACC[k] = { d: rgb(a.d), m: rgb(a.m), l: rgb(a.l), hex: a }; }
 
 /* tone sets with rim light (index 3) */
-const T_SUIT = [P.suit[0], P.suit[1], P.suit[2], rgb('#4a5aa8')];
-const T_SUITB = [P.suitB[0], P.suitB[1], P.suitB[2]];
-const T_ARM = [P.armour[0], P.armour[1], P.armour[2], rgb('#7488cc')];
-const T_ARMB = [P.armourB[0], P.armourB[1], P.armourB[2]];
+const T_SUIT = [P.suit[0], P.suit[1], P.suit[2], rgb('#6a80e0')];
+const T_SUITB = [P.suitB[0], P.suitB[1], P.suitB[2], rgb('#3a4890')];
+const T_ARM = [P.armour[0], P.armour[1], P.armour[2], rgb('#8fa6f4')];
+const T_ARMB = [P.armourB[0], P.armourB[1], P.armourB[2], rgb('#5266b0')];
 const T_MET = [P.metal[0], P.metal[1], P.metal[2]];
 
 /* ------------------------------------------------------------------ buffer geometry */
@@ -179,12 +179,15 @@ function skeleton(q) {
   } else if (st === 'jump') { hip = 21.5; lean = 6; ff = [6, 9, 20]; bf = [-6, 4, -40]; bh = [-6, 2]; }
   else if (st === 'fall') { hip = 22; lean = 0; ff = [4, 1, -15]; bf = [-6, 4, -35]; bh = [-5, 5]; }
   else if (st === 'dash') { hip = 15.5; lean = 38; ff = [9, 3, 0]; bf = [-17, 2, -60]; bh = [-8, -1]; headDX = 1; }
-  else if (st === 'hurt') { hip = 20; lean = -18; ff = [8, 2, 20]; bf = [-5, 0, 0]; bh = [-7, 4]; headTilt = 1; }
+  else if (st === 'hurt') { hip = 19; lean = -30; ff = [9, 3, 25]; bf = [-4, 0, 0]; bh = [-6, 8]; headTilt = 1; headDX = -2.5; }
   else if (st === 'dead') {
     if (q.dead === 0) { hip = 12; lean = 22; ff = [8, 0, 0]; bf = [-11, 0, -80]; bh = [2, -9]; headTilt = 2; }
     else { hip = 21; lean = 0; ff = [3, 0, 0]; bf = [-3, 0, 0]; bh = [3, -8]; headTilt = 2; }
-  } else { rise = [0, 1, 1, 0][q.frame]; ff = [6, 0, 0]; bf = [-6, 0, 0]; }
+  } else { rise = [0, 1, 2, 1][q.frame]; hip -= [0, 0.4, 0.6, 0.4][q.frame]; ff = [6, 0, 0]; bf = [-6, 0, 0]; bh = [-4, -8.5 + rise * 0.5]; }
 
+  if (q.rot && (st === 'jump' || st === 'fall')) {           // somersault: compact tuck, rotated as a whole
+    hip = 19; lean = 18; ff = [6, 12, 40]; bf = [1, 10, 10]; bh = [5, -3]; S.tuck = true;
+  }
   if (st !== 'dead') hip += 1.8;                                // leg-length tuning: straighter, longer legs
   const grounded = st === 'idle' || st === 'run';
   if (q.atk) {
@@ -285,7 +288,7 @@ function drawHead(S, A, q) {
   cap(hx - 3.5, hy + 3, hx - 9, hy + 5.5, 1.1, 0.6, T_ARM);
   px1(hx - 9.2, hy + 5.6, A.m);
   let ang = 0;
-  if (S.headTilt === 1) ang = -0.3; else if (S.headTilt === 2) ang = 0.35;
+  if (S.headTilt === 1) ang = -0.55; else if (S.headTilt === 2) ang = 0.35;
   if (ROT) ang -= Math.atan2(RS, RC);
   const pal = headPal(q.st === 'hurt' ? { d: P.white, m: P.white, l: P.white } : A, visor);
   stamp(LAY, HEAD_MAP, pal, bx(hx, hy), by(hx, hy), ang);
@@ -314,13 +317,14 @@ function drawFrontArmBlade(S, A, q) {
   let hd;
   const st = q.st;
   if (q.atk) hd = kf(BLADE_KF[q.atk - 1], q.atkU);
+  else if (S.tuck) hd = [4, -4, 200, 20];
   else if (st === 'run') hd = [-3, -6, 198, 22];
   else if (st === 'dash') hd = [-6, -3, 184, 26];
   else if (st === 'jump') hd = [-2, -5, 212, 22];
   else if (st === 'fall') hd = [6, -1, 42, 22];
-  else if (st === 'hurt') hd = [2, -7, 245, 16];
+  else if (st === 'hurt') hd = [-3, 6, 150, 16];
   else if (st === 'dead') hd = q.dead ? [5, -6, 0, 0] : [6, -9, -80, 6];
-  else hd = [GUARD[0], GUARD[1] + S.rise * 0.4, GUARD[2], GUARD[3]];
+  else hd = [GUARD[0], GUARD[1] + S.rise * 0.6, GUARD[2] + S.rise * 4, GUARD[3]];
   const len = hd[3] * easeOutBack(clamp(q.xf, 0, 1));
   const k = ik(sx, sy, sx + hd[0], sy + hd[1], 6.4, 6.4, -1);
   S.blade = { hx: k.ex, hy: k.ey, ang: hd[2], len };
@@ -506,7 +510,7 @@ function buildFrame(q, ov) {
   const AX = { cur: A, blink: ACC.blink };
   const S = skeleton(q); S.glows = [];
   ROT = false; PVX = 0; PVY = 22;
-  if (q.rot) { ROT = true; const r = q.rot * Math.PI / 8; RC = Math.cos(r); RS = Math.sin(r); }
+  if (q.rot) { ROT = true; PVY = 27; const r = q.rot * Math.PI / 8; RC = Math.cos(r); RS = Math.sin(r); }
   if (q.st === 'dead' && q.dead === 1) { ROT = true; RC = Math.cos(1.5); RS = Math.sin(1.5); PVX = 0; PVY = 6.5; }
 
   const air = q.st === 'jump' || q.st === 'fall' || q.st === 'dash';
@@ -533,6 +537,8 @@ function buildFrame(q, ov) {
   else { drawFrontArmCannon(S, A, q); commit(); drawCannonFx(S, A, q); commit(null); }
   ROT = false;
 
+  if (q.st === 'hurt' && !ov) tintBuf(MAIN, 255, 48, 80, 0.42);
+  if (!ov) backlight(MAIN);
   // flash / silhouette overlays
   if (q.flash || ov) {
     const c = ov ? rgb(ov.fill) : rgb('#eef2ff'), d = MAIN.d;
@@ -546,7 +552,27 @@ function buildFrame(q, ov) {
   });
   if (S.core) glows.push([OX + S.core[0], OY - S.core[1], NINJA_ACCENT[q.chip].m, 5, 0.4]);
   if (S.visor && !(q.st === 'dead')) glows.push([OX + S.visor[0], OY - S.visor[1], NINJA_ACCENT[q.chip].m, 6, 0.45]);
-  return { cv, glows: ov ? [] : glows };
+  return { cv, glows: ov || q.rot ? [] : glows };
+}
+
+/* red damage tint on everything except the outline / pure white */
+function tintBuf(B, r, gg, b, k) {
+  const d = B.d, u8 = new Uint8Array(d.buffer);
+  for (let i = 0; i < d.length; i++) {
+    const c = d[i]; if (!c || c === P.ol || c === P.white) continue;
+    const o = i * 4;
+    u8[o] = u8[o] + (r - u8[o]) * k; u8[o + 1] = u8[o + 1] + (gg - u8[o + 1]) * k; u8[o + 2] = u8[o + 2] + (b - u8[o + 2]) * k;
+  }
+}
+/* 1-px soft back/top light outside the outline: makes the dark silhouette pop on dark streets */
+const BACK_RIM = rgb('#7f8cff', 120), TOP_RIM = rgb('#b7c4ff', 90);
+function backlight(B) {
+  const w = B.w, h = B.h, d = B.d, A = c => c >>> 24;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x; if (d[i]) continue;
+    if (A(d[i + 1]) === 255 && d[i + 1] === P.ol) d[i] = BACK_RIM;          // left of the silhouette (= behind)
+    else if (A(d[i + w]) === 255 && d[i + w] === P.ol) d[i] = TOP_RIM;      // above the silhouette
+  }
 }
 
 function makeCanvas(w, h) {

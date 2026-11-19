@@ -14,6 +14,13 @@ export const HUD = {
     const hp = $('health');
     for (let i = 0; i < 6; i++) { const v = document.createElement('i'); hp.appendChild(v); this.pips.push(v); }
 
+    /* guard meter (shield stamina): 3 pips beside the health bar, shown once SHIELD is owned */
+    const gw = document.createElement('div'); gw.className = 'guard'; gw.id = 'guard';
+    gw.innerHTML = '<span class="tiny">GUARD</span>';
+    this.gpips = [];
+    for (let i = 0; i < 3; i++) { const v = document.createElement('i'); gw.appendChild(v); this.gpips.push(v); }
+    hp.parentElement.appendChild(gw);
+
     /* three body slots, each labelled with the button that fires it */
     const bar = $('chipbar');
     const groups = [['R-ARM', ['blade', 'cannon'], 'J'], ['L-ARM', ['shield'], 'L'], ['LEGS', ['blink'], 'K']];
@@ -84,6 +91,20 @@ export const HUD = {
       p.classList.toggle('empty', i >= hp);
     }
     if (hurt && hp < max) { const p = this.pips[hp]; if (p) { p.classList.remove('pop'); void p.offsetWidth; p.classList.add('pop'); setTimeout(() => p.classList.remove('pop'), 160); } }
+  },
+  /** guard: 0..max (fractional), broken = guard-break stun */
+  setGuard(guard, max = 3, broken = false) {
+    if (!this.gpips) return;
+    const g = Math.round((guard || 0) * 4) / 4, key = g + '|' + max + '|' + broken + '|' + (this.chips.shield && !this.chips.shield.el.classList.contains('locked'));
+    if (this.last.guard === key) return; this.last.guard = key;
+    const el = document.getElementById('guard'); if (el) el.classList.toggle('broken', !!broken);
+    const n = Math.max(1, Math.round(max) || 3);
+    for (let i = 0; i < this.gpips.length; i++) {
+      const p = this.gpips[i], f = Math.max(0, Math.min(1, g - i));
+      p.style.display = i < n ? '' : 'none';
+      p.style.setProperty('--f', f);
+      p.classList.toggle('empty', f <= 0); p.classList.toggle('full', f >= 1);
+    }
   },
   setKills(k, total) { $('killcount').textContent = `${k} / ${total}`; },
   setProgress(pct) { if (this.last.pct !== pct) { this.last.pct = pct; $('progress').textContent = pct + '%'; } },

@@ -99,6 +99,7 @@ export function poly(B, P, T, bevel = 1.05) {
       if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
     }
     if (!inside) continue;
+    if (typeof T === 'function') { B.set(x, y, T(x, y)); continue; }
     if (!arr) { B.set(x, y, T); continue; }
     let best = 1e9, bnx = 0, bny = 0;
     for (let i = 0; i < n; i++) {
