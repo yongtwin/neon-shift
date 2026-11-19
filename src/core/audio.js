@@ -1,9 +1,9 @@
-'use strict';
+
 /* =====================================================================
    Tiny WebAudio synth — no audio files. Every sound is a short tone sweep
    and/or filtered noise burst. Created lazily on the first user gesture.
    ===================================================================== */
-const SFX = (() => {
+export const SFX = (() => {
   let ctx = null, master = null, noiseBuf = null, muted = false;
   const lastT = {};
 

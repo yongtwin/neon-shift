@@ -1,4 +1,7 @@
-'use strict';
+import { SFX } from './audio.js';
+import { Game } from './game.js';
+import { HUD } from '../ui/hud.js';
+
 /* =====================================================================
    Input: KEYBOARD + GAMEPAD only (no mouse, so hands never leave the controls).
 
@@ -14,14 +17,14 @@
 
    Movement handling still mirrors v0.3 (keyName fallback + first-press nudge).
    ===================================================================== */
-const keys = {};                 // held keys by normalised code
-const touch = {};                // held virtual buttons (touch pad + gamepad)
-const pressed = { jump: false, dash: false, attack: false, blink: false };   // edge flags, consumed by the sim
-const Aim = { padX: 0, padY: 0, pad: false };
-let gpPrev = { jump: false, dash: false, atk: false, blink: false, swap: false };
-let lastInputLabel = '-';
+export const keys = {};                 // held keys by normalised code
+export const touch = {};                // held virtual buttons (touch pad + gamepad)
+export const pressed = { jump: false, dash: false, attack: false, blink: false };   // edge flags, consumed by the sim
+export const Aim = { padX: 0, padY: 0, pad: false };
+export let gpPrev = { jump: false, dash: false, atk: false, blink: false, swap: false };
+export let lastInputLabel = '-';
 
-function keyName(e) {
+export function keyName(e) {
   const code = e.code;
   if (code && code !== 'Unidentified') return code;
   const raw = e.key || '', k = raw.toLowerCase();
@@ -33,17 +36,17 @@ function keyName(e) {
   return code || raw;
 }
 
-function clearInput() { for (const k in keys) keys[k] = false; for (const k in touch) touch[k] = false; }
+export function clearInput() { for (const k in keys) keys[k] = false; for (const k in touch) touch[k] = false; }
 
-const isLeftKey = k => k === 'KeyA' || k === 'ArrowLeft';
-const isRightKey = k => k === 'KeyD' || k === 'ArrowRight';
+export const isLeftKey = k => k === 'KeyA' || k === 'ArrowLeft';
+export const isRightKey = k => k === 'KeyD' || k === 'ArrowRight';
 
-function inputLeft() { return !!(keys.KeyA || keys.ArrowLeft || touch.left); }
-function inputRight() { return !!(keys.KeyD || keys.ArrowRight || touch.right); }
-function inputAttackHeld() { return !!(keys.KeyJ || touch.attack || touch.pAttack); }
-function inputShieldHeld() { return !!(keys.KeyL || touch.shield || touch.pShield); }
-function inputAimUp() { return !!(keys.KeyI || keys.ArrowUp || touch.pUp); }
-function inputAimDown() { return !!(keys.KeyS || keys.ArrowDown || touch.pDown); }
+export function inputLeft() { return !!(keys.KeyA || keys.ArrowLeft || touch.left); }
+export function inputRight() { return !!(keys.KeyD || keys.ArrowRight || touch.right); }
+export function inputAttackHeld() { return !!(keys.KeyJ || touch.attack || touch.pAttack); }
+export function inputShieldHeld() { return !!(keys.KeyL || touch.shield || touch.pShield); }
+export function inputAimUp() { return !!(keys.KeyI || keys.ArrowUp || touch.pUp); }
+export function inputAimDown() { return !!(keys.KeyS || keys.ArrowDown || touch.pDown); }
 
 window.addEventListener('keydown', e => {
   const k = keyName(e);
@@ -73,12 +76,12 @@ window.addEventListener('blur', clearInput);
 document.addEventListener('visibilitychange', () => { if (document.hidden) clearInput(); });
 
 /* the playfield ignores the mouse on purpose; it only keeps keyboard focus */
-function bindPointer(game) {
+export function bindPointer(game) {
   game.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 /* on-screen touch buttons (phones / tablets) */
-function bindTouchButtons() {
+export function bindTouchButtons() {
   for (const btn of document.querySelectorAll('.touch')) {
     const name = btn.dataset.control;
     btn.addEventListener('pointerdown', e => {
@@ -98,7 +101,7 @@ function bindTouchButtons() {
   if (matchMedia('(pointer:coarse)').matches || /[?&]touch\b/.test(location.search)) document.body.classList.add('touch-ui');
 }
 
-function pollGamepad() {
+export function pollGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
   for (const p of pads) if (p && p.connected) { gp = p; break; }

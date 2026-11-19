@@ -1,4 +1,6 @@
-'use strict';
+import { R, disc, g, glow, line, makeCanvas, mix, px, withCtx } from './pixel.js';
+import { DEG, clamp, easeOutBack, lerp, smooth } from '../core/util.js';
+
 /* =====================================================================
    Procedural pixel-art characters.
 
@@ -11,40 +13,40 @@
 
    Local pose space: x = forward, y = up, origin = centre of the feet.
    ===================================================================== */
-const PAL = {
+export const PAL = {
   ol: '#04060c',                                           // outline
   s0: '#101a36', s1: '#22326a', s2: '#33489a', s3: '#5572d0', // suit (blue steel)
   p0: '#3c4a78', p1: '#8092c4', p2: '#c4d0f2',             // armour plates
   mg0: '#8f1259', mg1: '#ff3d9d', mg2: '#ffa6d6',          // scarf
   wh: '#ffffff',
 };
-const ACCENT = {           // one accent colour per chip: visor, core, arm glow
+export const ACCENT = {           // one accent colour per chip: visor, core, arm glow
   blade:  { d: '#0e7f9c', m: '#2fe6ff', l: '#d6fdff', name: 'CYAN' },
   cannon: { d: '#b8700c', m: '#ffc43d', l: '#fff3b8', name: 'AMBER' },
   shield: { d: '#5a3fc0', m: '#a58bff', l: '#ece4ff', name: 'VIOLET' },
   blink:  { d: '#a3146f', m: '#ff4fc0', l: '#ffd0f0', name: 'PINK' },
 };
-const EN = {               // enemy palette: gunmetal + hot red / amber
+export const EN = {               // enemy palette: gunmetal + hot red / amber
   o: '#06070d', g0: '#1d2340', g1: '#323f6c', g2: '#4c5e98', g3: '#8294cc',
   r0: '#7a1224', r1: '#ff3b4a', r2: '#ffb347', am: '#ffb02e', am0: '#8a5400', wh: '#ffffff',
 };
 
 /* ------------------------------------------------------------------ transform helpers */
-let _ox = 0, _oy = 0, _f = 1, _rc = 1, _rs = 0, _rotOn = false, _pv = 18, OV = null, TX = 0, TY = 0;
+export let _ox = 0, _oy = 0, _f = 1, _rc = 1, _rs = 0, _rotOn = false, _pv = 18, OV = null, TX = 0, TY = 0;
 
-function T(x, y) {                         // local pose space -> screen pixels (TX,TY)
+export function T(x, y) {                         // local pose space -> screen pixels (TX,TY)
   if (_rotOn) { const dy = y - _pv, rx = x * _rc - dy * _rs, ry = x * _rs + dy * _rc; x = rx; y = ry + _pv; }
   TX = _ox + _f * x; TY = _oy - y;
 }
-function ovc(c) { return OV ? (c === PAL.ol && OV.keepOutline ? c : OV.fill) : c; }
-function L(x0, y0, x1, y1, t, c) {
+export function ovc(c) { return OV ? (c === PAL.ol && OV.keepOutline ? c : OV.fill) : c; }
+export function L(x0, y0, x1, y1, t, c) {
   if (c == null) return;
   T(x0, y0); const ax = TX, ay = TY; T(x1, y1);
   line(ax, ay, TX, TY, t, ovc(c));
 }
-function D(x, y, r, c) { T(x, y); disc(TX, TY, r, ovc(c)); }
-function P1(x, y, c) { T(x, y); px(TX, TY, ovc(c)); }
-function LA(cx, cy, r, a0, a1, t, c) {      // arc in local space
+export function D(x, y, r, c) { T(x, y); disc(TX, TY, r, ovc(c)); }
+export function P1(x, y, c) { T(x, y); px(TX, TY, ovc(c)); }
+export function LA(cx, cy, r, a0, a1, t, c) {      // arc in local space
   const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) * r / 1.2));
   for (let i = 0; i <= n; i++) {
     const a = a0 + (a1 - a0) * (i / n);
@@ -52,11 +54,11 @@ function LA(cx, cy, r, a0, a1, t, c) {      // arc in local space
     g.fillStyle = ovc(c); g.fillRect(Math.round(TX) - (t >> 1), Math.round(TY) - (t >> 1), t, t);
   }
 }
-function GL(x, y, color, r, a) { if (OV) return; T(x, y); glow(TX, TY, color, r, a); }
+export function GL(x, y, color, r, a) { if (OV) return; T(x, y); glow(TX, TY, color, r, a); }
 
 /* limb chain: outline pass first, then fill, then a 1px rim-light on the forward edge */
-const KN = { x: 0, y: 0 };
-function ik2(hx, hy, fx, fy, l1, l2, bend) {            // bend +1: knee forward (for legs hanging down)
+export const KN = { x: 0, y: 0 };
+export function ik2(hx, hy, fx, fy, l1, l2, bend) {            // bend +1: knee forward (for legs hanging down)
   let dx = fx - hx, dy = fy - hy, d = Math.hypot(dx, dy);
   const mx = l1 + l2 - 0.05;
   if (d > mx) { dx *= mx / d; dy *= mx / d; d = mx; }
@@ -65,28 +67,28 @@ function ik2(hx, hy, fx, fy, l1, l2, bend) {            // bend +1: knee forward
   const ux = dx / d, uy = dy / d;
   KN.x = hx + ux * a + (-uy) * h * bend; KN.y = hy + uy * a + ux * h * bend;
 }
-function limb(ax, ay, bx, by, cx, cy, t1, t2, fill, edge, hi) {
+export function limb(ax, ay, bx, by, cx, cy, t1, t2, fill, edge, hi) {
   L(ax, ay, bx, by, t1 + 2, edge); L(bx, by, cx, cy, t2 + 2, edge);
   L(ax, ay, bx, by, t1, fill); L(bx, by, cx, cy, t2, fill);
   if (hi) { L(ax + 1, ay, bx + 1, by, 1, hi); L(bx + 1, by, cx + 1, cy, 1, hi); }
 }
 
 /* ------------------------------------------------------------------ player pose */
-const Q = { hipH: 17, lean: 1, ffx: 5, ffy: 0, bfx: -4, bfy: 0, sx: 0, sy: 0, hx: 0, hy: 0, bhx: 0, bhy: 0 };
-const KK = [0, 0, 0, 0];
-const BLADE_KF = [   // [u, handDX, handDY, bladeAngleDeg, bladeLen] relative to the shoulder
+export const Q = { hipH: 17, lean: 1, ffx: 5, ffy: 0, bfx: -4, bfy: 0, sx: 0, sy: 0, hx: 0, hy: 0, bhx: 0, bhy: 0 };
+export const KK = [0, 0, 0, 0];
+export const BLADE_KF = [   // [u, handDX, handDY, bladeAngleDeg, bladeLen] relative to the shoulder
   [[0, -5, 3, 150, 18], [.12, -6, 4, 160, 18], [.3, 9, -1, 15, 31], [.55, 11, -4, -35, 27], [1, 7, -6, 25, 20]],
   [[0, 8, -7, -40, 20], [.12, 9, -8, -55, 20], [.3, 8, 2, 40, 31], [.55, 2, 6, 115, 27], [1, 7, -6, 25, 20]],
   [[0, -2, 10, 100, 20], [.2, -3, 12, 115, 20], [.38, 10, -6, -60, 38], [.7, 11, -7, -75, 33], [1, 7, -6, 25, 20]],
 ];
-function kf(tab, u, out) {
+export function kf(tab, u, out) {
   u = clamp(u, 0, 1);
   let i = 0; while (i < tab.length - 2 && u > tab[i + 1][0]) i++;
   const a = tab[i], b = tab[i + 1], t = smooth(clamp((u - a[0]) / ((b[0] - a[0]) || 1), 0, 1));
   for (let k = 0; k < 4; k++) out[k] = lerp(a[k + 1], b[k + 1], t);
 }
 
-function poseOf(p) {
+export function poseOf(p) {
   const st = p.anim, ph = p.run || 0, t = p.t || 0;
   let hipH = 17, lean = 1, ffx = 5, ffy = 0, bfx = -4, bfy = 0;
   if (st === 'run') {
@@ -127,8 +129,8 @@ function poseOf(p) {
 }
 
 /* weapon arm target (hand position + weapon parameters) */
-const W = { hx: 0, hy: 0, ang: 0, len: 0 };
-function weaponArm(p) {
+export const W = { hx: 0, hy: 0, ang: 0, len: 0 };
+export function weaponArm(p) {
   const st = p.anim, S = Q, xf = p.xf === undefined ? 1 : p.xf, ext = easeOutBack(clamp(xf, 0, 1));
   let hx, hy, ang = 0, len = 0;
   switch (p.chip) {
@@ -155,7 +157,7 @@ function weaponArm(p) {
   return W;
 }
 
-function drawBlade(hx, hy, angDeg, len, A, p) {
+export function drawBlade(hx, hy, angDeg, len, A, p) {
   if (len < 1) return;
   const a = angDeg * DEG, dx = Math.cos(a), dy = Math.sin(a);
   L(hx - dx * 2, hy - dy * 2, hx + dx * 3, hy + dy * 3, 3, PAL.p1);          // hilt / emitter
@@ -169,7 +171,7 @@ function drawBlade(hx, hy, angDeg, len, A, p) {
   GL((bx + ex) / 2, (by + ey) / 2, A.m, Math.min(13, 4 + (len >> 2)), 0.3);
 }
 
-function drawCannon(hx, hy, angDeg, len, A, p) {
+export function drawCannon(hx, hy, angDeg, len, A, p) {
   const a = angDeg * DEG, dx = Math.cos(a), dy = Math.sin(a), nx = -dy, ny = dx;
   const x0 = hx - dx * 4, y0 = hy - dy * 4, x1 = hx + dx * 7, y1 = hy + dy * 7;
   L(x0, y0, x1, y1, 7, PAL.ol); L(x0, y0, x1, y1, 5, PAL.p0);
@@ -199,7 +201,7 @@ function drawCannon(hx, hy, angDeg, len, A, p) {
   }
 }
 
-function drawShield(hx, hy, R, p, A) {
+export function drawShield(hx, hy, R, p, A) {
   const s = p.shieldAmt || 0, parry = p.parryT > 0, hit = p.blockFlash > 0;
   const half = lerp(38, 62, s) * DEG;
   const cx = hx + 4 + 3 * s - R, cy = hy;                                    // arc centre sits behind the arm
@@ -225,7 +227,7 @@ function drawShield(hx, hy, R, p, A) {
 }
 
 /* ------------------------------------------------------------------ the ninja */
-function drawPlayer(p, ox, oy, ov) {
+export function drawPlayer(p, ox, oy, ov) {
   OV = ov || null;
   _ox = Math.round(ox); _oy = Math.round(oy); _f = p.facing;
   const rot = p.rot || 0; _rotOn = rot !== 0; if (_rotOn) { _rc = Math.cos(rot); _rs = Math.sin(rot); _pv = 17; }
@@ -331,7 +333,7 @@ function drawPlayer(p, ox, oy, ov) {
   OV = null; _rotOn = false;
 }
 
-function thrusterFx(fx, fy, k, A, p) {
+export function thrusterFx(fx, fy, k, A, p) {
   if (OV) return;
   const fl = 0.6 + 0.4 * Math.random();
   D(fx - 2, fy + 3, 1, A.l);                                                    // ankle vent
@@ -341,7 +343,7 @@ function thrusterFx(fx, fy, k, A, p) {
 }
 
 /* ------------------------------------------------------------------ enemies */
-function enemyPose(e, hip, thigh, shin, stride, lift) {
+export function enemyPose(e, hip, thigh, shin, stride, lift) {
   const ph = e.walk || 0;
   let ffx = 3, ffy = 0, bfx = -3, bfy = 0;
   if (e.anim === 'walk' || e.anim === 'chase') {
@@ -354,7 +356,7 @@ function enemyPose(e, hip, thigh, shin, stride, lift) {
   return { hip, ffx, ffy, bfx, bfy, thigh, shin };
 }
 
-function drawEnemy(e, ox, oy, ov) {
+export function drawEnemy(e, ox, oy, ov) {
   OV = ov || null; _rotOn = false;
   _ox = Math.round(ox); _oy = Math.round(oy); _f = e.facing;
   const prevAlpha = g.globalAlpha;
@@ -364,7 +366,7 @@ function drawEnemy(e, ox, oy, ov) {
   g.globalAlpha = prevAlpha; OV = null;
 }
 
-function enemyLegs(po, tFront, tBack, fill, hi) {
+export function enemyLegs(po, tFront, tBack, fill, hi) {
   const hip = po.hip;
   ik2(-1, hip, po.bfx, po.bfy + 1, po.thigh, po.shin, -1);
   limb(-1, hip, KN.x, KN.y, po.bfx, po.bfy + 1, tBack, 3, EN.g0, EN.o, null);
@@ -374,7 +376,7 @@ function enemyLegs(po, tFront, tBack, fill, hi) {
   L(po.ffx - 2, po.ffy + 1, po.ffx + 4, po.ffy + 1, 5, EN.o); L(po.ffx - 1, po.ffy + 1, po.ffx + 4, po.ffy + 1, 3, EN.g1);
 }
 
-function drawGunner(e) {
+export function drawGunner(e) {
   const A = e.anim, fl = e.flash > 0 && !OV, tele = e.tele || 0;
   const po = enemyPose(e, 14, 7, 7, 4, 3);
   const bob = A === 'idle' || A === 'alert' ? ((((e.t || 0) * 2) % 1) < 0.5 ? 0 : -1) : 0;
@@ -426,7 +428,7 @@ function drawGunner(e) {
   D(hx2, hy2, 1, EN.g3);
 }
 
-function drawEnforcer(e) {
+export function drawEnforcer(e) {
   const A = e.anim, fl = e.flash > 0 && !OV, tele = e.tele || 0;
   const chasing = A === 'chase' || A === 'lunge' || A === 'windup';
   const po = enemyPose(e, 16, 8, 8, 5, 4);
@@ -474,7 +476,7 @@ function drawEnforcer(e) {
   GL(bx + dx * (3 + len / 2), by + dy * (3 + len / 2), EN.r1, 8 + (tele * 8 | 0), 0.5 + tele * 0.4);
 }
 
-function drawWarden(e) {
+export function drawWarden(e) {
   const A = e.anim, fl = e.flash > 0 && !OV, tele = e.tele || 0;
   const po = enemyPose(e, 19, 9, 9, 4, 3);
   const bob = A === 'idle' || A === 'alert' ? ((((e.t || 0) * 1.4) % 1) < 0.5 ? 0 : -1) : 0;
@@ -519,7 +521,7 @@ function drawWarden(e) {
 }
 
 /* ------------------------------------------------------------------ chip icons (16x16, used by HUD + world pickups) */
-function makeChipIcon(id) {
+export function makeChipIcon(id) {
   const [c, x] = makeCanvas(16, 16);
   const A = ACCENT[id];
   withCtx(x, () => {

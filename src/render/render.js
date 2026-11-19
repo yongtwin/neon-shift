@@ -1,34 +1,44 @@
-'use strict';
+import { ACCENT, drawEnemy, drawPlayer, makeChipIcon } from '../art/art.js';
+import { R, disc, g, glow, line, makeCanvas, mix, px, ring, setGfx, text, textW, withCtx } from '../art/pixel.js';
+import { CHIP_INFO, CHIP_ORDER } from '../chips/chips.js';
+import { dbgBoxes, hurtbox } from '../combat/combat.js';
+import { Feel } from '../combat/feel.js';
+import { Game } from '../core/game.js';
+import { S, bullets, enemies, enemyBullets } from '../core/state.js';
+import { PPU, seeded } from '../core/util.js';
+import { FX } from '../effects/fx.js';
+import { ARENAS, CHECKPOINTS, DECOR, EXIT_X, FG, PICKUPS, PLAT } from '../levels/stage1.js';
+import { SCARF_N, muzzleWorld, player } from '../player/player.js';
+
 /* =====================================================================
    Renderer. Everything is drawn into a low-resolution canvas (≈270px tall)
    that CSS scales up with nearest-neighbour filtering. Background layers,
    platforms and props are generated procedurally ONCE (seeded) and then
    blitted, so the per-frame cost is a few dozen drawImage calls.
    ===================================================================== */
-const view = { W: 480, H: 270, css: 3, gy: 200, camX: 3, camY: 0, cpx: 0, cpy: 0, sky: null, vig: null };
-let screenEl = null, screenCtx = null, gameEl = null, heroCtx = null;
-const ART = { layers: [], plats: [], props: {}, ready: false };
+export const view = { W: 480, H: 270, css: 3, gy: 200, camX: 3, camY: 0, cpx: 0, cpy: 0, sky: null, vig: null };
+export const ART = { layers: [], plats: [], props: {}, ready: false };
 
-const sx = wx => Math.round(wx * PPU) - view.cpx + (view.W >> 1);
-const sy = wy => view.gy + view.cpy - Math.round(wy * PPU);
+export const sx = wx => Math.round(wx * PPU) - view.cpx + (view.W >> 1);
+export const sy = wy => view.gy + view.cpy - Math.round(wy * PPU);
 
 /* ------------------------------------------------------------------ sizing */
-function resizeView() {
+export function resizeView() {
   const dpr = window.devicePixelRatio || 1;
-  const cw = Math.max(1, gameEl.clientWidth), ch = Math.max(1, gameEl.clientHeight);
+  const cw = Math.max(1, S.gameEl.clientWidth), ch = Math.max(1, S.gameEl.clientHeight);
   const zq = /[?&]zoom=(\d+)/.exec(location.search);                  // dev override: ?zoom=4
   const dev = zq ? +zq[1] : Math.max(2, Math.round(ch * dpr / 270));  // device pixels per art pixel (integer → crisp)
   const css = dev / dpr;
   view.css = css;
   view.W = Math.min(760, Math.ceil(cw / css)); view.H = Math.ceil(ch / css);
-  screenEl.width = view.W; screenEl.height = view.H;
-  screenEl.style.width = (view.W * css) + 'px'; screenEl.style.height = (view.H * css) + 'px';
-  screenCtx.imageSmoothingEnabled = false;
+  S.screenEl.width = view.W; S.screenEl.height = view.H;
+  S.screenEl.style.width = (view.W * css) + 'px'; S.screenEl.style.height = (view.H * css) + 'px';
+  S.screenCtx.imageSmoothingEnabled = false;
   view.gy = Math.round(view.H * 0.74);
   buildSky(); buildVignette();
 }
 
-function buildSky() {
+export function buildSky() {
   const [c, x] = makeCanvas(view.W, view.H);
   const r = seeded(99);
   withCtx(x, () => {
@@ -51,7 +61,7 @@ function buildSky() {
   });
   view.sky = c;
 }
-function buildVignette() {
+export function buildVignette() {
   const [c, x] = makeCanvas(view.W, view.H);
   const grad = x.createRadialGradient(view.W / 2, view.H * 0.5, view.H * 0.35, view.W / 2, view.H * 0.5, view.H * 0.95);
   grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(2,4,12,0.55)');
@@ -60,10 +70,10 @@ function buildVignette() {
 }
 
 /* ------------------------------------------------------------------ background strips */
-const SIGN_TEXT = ['BAR', 'NOODLE', 'SYNTH', 'HOTEL', 'CYBER', '24H', 'ARCADE', 'NEXUS', 'TECH', 'CLINIC', 'OPEN', 'DRONE', 'RAMEN', 'CHIP', 'NEON', 'SHIFT'];
-const SIGN_COL = ['#2fe6ff', '#ff3d9d', '#ffc43d', '#a58bff', '#4dff9d'];
+export const SIGN_TEXT = ['BAR', 'NOODLE', 'SYNTH', 'HOTEL', 'CYBER', '24H', 'ARCADE', 'NEXUS', 'TECH', 'CLINIC', 'OPEN', 'DRONE', 'RAMEN', 'CHIP', 'NEON', 'SHIFT'];
+export const SIGN_COL = ['#2fe6ff', '#ff3d9d', '#ffc43d', '#a58bff', '#4dff9d'];
 
-function buildStrip(o) {
+export function buildStrip(o) {
   const [c, x] = makeCanvas(o.w, o.h), r = seeded(o.seed), lights = [];
   withCtx(x, () => {
     let bx = 0;
@@ -113,7 +123,7 @@ function buildStrip(o) {
   return { c, w: o.w, h: o.h, lights, par: o.par, dy: o.dy, bottom: o.bottom };
 }
 
-function buildBackground() {
+export function buildBackground() {
   const WIN = ['#2fe6ff', '#ffc43d', '#ff3d9d', '#8fd8ff', '#ffd98a'];
   ART.layers = [
     buildStrip({ seed: 11, w: 720, h: 270, par: 0.08, dy: -34, hMin: 120, hMax: 250, wMin: 44, wMax: 96, body: '#1a2152', edge: '#2d3a85', win: 0.05, wx: 6, wy: 7, winCols: ['#4a5cc8', '#6d4cc8'], fog: '#6a2c8a', fogA: 0.55, bottom: '#2a1d5e', beacon: true, signs: 0 }),
@@ -124,7 +134,7 @@ function buildBackground() {
 }
 
 /* ------------------------------------------------------------------ platforms */
-function buildPlatformSprite(x1, x2, py, idx) {
+export function buildPlatformSprite(x1, x2, py, idx) {
   const w = Math.round((x2 - x1) * PPU), r = seeded(500 + idx * 31);
   const ground = py === 0, h = ground ? 260 : 30;
   const [c, x] = makeCanvas(w, h);
@@ -166,7 +176,7 @@ function buildPlatformSprite(x1, x2, py, idx) {
 }
 
 /* ------------------------------------------------------------------ props */
-function buildProp(d) {
+export function buildProp(d) {
   const r = seeded(d.seed), col = d.hue ? '#ff3d9d' : '#2fe6ff';
   let w = 24, h = 24, light = null;
   const draw = fn => { const [c, x] = makeCanvas(w, h); withCtx(x, () => fn(x)); return { c, w, h, light, type: d.type }; };
@@ -191,7 +201,7 @@ function buildProp(d) {
   }
 }
 
-function buildArt() {
+export function buildArt() {
   buildBackground();
   ART.plats = PLAT.map((p, i) => buildPlatformSprite(p[0], p[1], p[2], i));
   for (const d of DECOR) d.sprite = buildProp(d);
@@ -200,11 +210,11 @@ function buildArt() {
 }
 
 /* ------------------------------------------------------------------ frame */
-function tileXs(par, sw, cb) {
+export function tileXs(par, sw, cb) {
   const x0 = -((((view.cpx * par) % sw) + sw) % sw);
   for (let xx = Math.round(x0); xx < view.W; xx += sw) cb(xx);
 }
-function drawStrip(L) {
+export function drawStrip(L) {
   const base = view.gy + Math.round(view.cpy * L.par) + L.dy;
   if (base < view.H) R(0, base, view.W, view.H - base + 1, L.bottom);
   tileXs(L.par, L.w, xx => g.drawImage(L.c, xx, base - L.h));
@@ -218,7 +228,7 @@ function drawStrip(L) {
   }
 }
 
-function drawCars() {
+export function drawCars() {
   const tm = Game.time, par = 0.28;
   for (let i = 0; i < 5; i++) {
     const sp = 14 + i * 7, dir = i % 2 ? -1 : 1, len = view.W + 160;
@@ -231,7 +241,7 @@ function drawCars() {
   }
 }
 
-function drawPlatforms() {
+export function drawPlatforms() {
   for (const P of ART.plats) {
     const X = sx(P.x1), Y = sy(P.py);
     if (X > view.W + 4 || X + P.c.width < -4) continue;
@@ -241,7 +251,7 @@ function drawPlatforms() {
   }
 }
 
-function drawProps() {
+export function drawProps() {
   const tm = Game.time;
   for (const d of DECOR) {
     const s = d.sprite, X = sx(d.x) - (s.w >> 1);
@@ -259,7 +269,7 @@ function drawProps() {
   }
 }
 
-function drawCheckpoints() {
+export function drawCheckpoints() {
   const tm = Game.time;
   for (const cp of CHECKPOINTS.slice(1)) {
     const X = sx(cp), Y = sy(0), on = player.checkpoint >= cp;
@@ -272,7 +282,7 @@ function drawCheckpoints() {
   }
 }
 
-function drawPickups() {
+export function drawPickups() {
   const tm = Game.time;
   for (const pk of PICKUPS) {
     if (player.unlocked.has(pk.id)) continue;
@@ -287,7 +297,7 @@ function drawPickups() {
   }
 }
 
-function drawPortal() {
+export function drawPortal() {
   const tm = Game.time, X = sx(EXIT_X), Y = sy(0);
   if (X < -60 || X > view.W + 60) return;
   const done = Game.kills >= enemies.length;
@@ -303,7 +313,7 @@ function drawPortal() {
   const lbl = done ? 'EXIT OPEN' : 'EXIT'; text(lbl, X - (textW(lbl) >> 1), Y - 88, done ? '#ffe06b' : '#9fe9f5', 1, '#05070e');
 }
 
-function drawArenaWalls() {
+export function drawArenaWalls() {
   const tm = Game.time;
   for (const a of ARENAS) {
     const on = Game.arena === a, k = on ? Math.min(1, 1 - a.wallT / 0.4) : a.wallT / 0.5;
@@ -319,7 +329,7 @@ function drawArenaWalls() {
   }
 }
 
-function drawForeground() {
+export function drawForeground() {
   const par = 1.38;
   for (const f of FG) {
     const X = Math.round(f.x * PPU * par - view.cpx * par) + (view.W >> 1);
@@ -335,7 +345,7 @@ function drawForeground() {
   }
 }
 
-function drawRain() {
+export function drawRain() {
   const tm = Game.time;
   g.globalAlpha = 0.28;
   for (let i = 0; i < 70; i++) {
@@ -348,12 +358,12 @@ function drawRain() {
   g.globalAlpha = 1;
 }
 
-function drawShadow(wx, wy, wpx) {
+export function drawShadow(wx, wy, wpx) {
   const X = sx(wx), Y = sy(wy);
   g.globalAlpha = 0.32; R(X - (wpx >> 1), Y - 1, wpx, 3, '#000000'); R(X - (wpx >> 1) + 2, Y - 2, wpx - 4, 1, '#000000'); g.globalAlpha = 1;
 }
 
-function drawEnemyEntity(e) {
+export function drawEnemyEntity(e) {
   const X = sx(e.x) + (e.shake > 0 ? ((Math.random() * 3) | 0) - 1 : 0), Y = sy(e.y);
   if (X < -60 || X > view.W + 60) return;
   drawShadow(e.x, e.y, e.kind === 'warden' ? 26 : 18);
@@ -373,7 +383,7 @@ function drawEnemyEntity(e) {
   }
 }
 
-function drawEnemyBullet(b) {
+export function drawEnemyBullet(b) {
   const X = sx(b.x), Y = sy(b.y);
   if (b.wave) {                                                         // ground shockwave
     const f = ((Game.time * 30) | 0) % 2, d = Math.sign(b.vx);
@@ -386,7 +396,7 @@ function drawEnemyBullet(b) {
   disc(X, Y, 3, '#0a0508'); disc(X, Y, 2, '#ff3b4a'); px(X, Y, '#fff0c8'); px(X - 1, Y - 1, '#ffb347');
   glow(X, Y, '#ff3b4a', 11, 0.8);
 }
-function drawPlayerBullet(b) {                                       // drawn along its flight direction
+export function drawPlayerBullet(b) {                                       // drawn along its flight direction
   const X = sx(b.x), Y = sy(b.y), sp = Math.hypot(b.vx, b.vy || 0) || 1, ux = b.vx / sp, uy = -(b.vy || 0) / sp, refl = b.reflected;
   const c1 = refl ? '#9ff6ff' : '#ffc43d', c2 = '#ffffff';
   g.globalAlpha = 0.45; line(X - ux * 16, Y - uy * 16, X, Y, 3, c1); g.globalAlpha = 1;
@@ -398,7 +408,7 @@ function drawPlayerBullet(b) {                                       // drawn al
 }
 
 /* cannon aim guide: dotted sight line + lock-on brackets on the auto-aim target */
-function drawAimGuide() {
+export function drawAimGuide() {
   const p = player;
   if (p.chip !== 'cannon' || p.dead || !Game.running) return;
   const m = muzzleWorld(), X0 = sx(m.x), Y0 = sy(m.y), tm = Game.time;
@@ -415,7 +425,7 @@ function drawAimGuide() {
   }
 }
 
-function drawPlayerEntity() {
+export function drawPlayerEntity() {
   const p = player;
   const X = sx(p.x), Y = sy(p.y);
   if (p.onGround && !p.dead) { drawShadow(p.x, p.y, 16); glow(X, Y, ACCENT[p.chip].m, 14, 0.18); }
@@ -427,7 +437,7 @@ function drawPlayerEntity() {
   g.globalAlpha = 1;
 }
 
-function drawBoxes() {
+export function drawBoxes() {
   g.globalAlpha = 0.9;
   const rect = (x0, y0, x1, y1, c) => { const a = sx(x0), b = sy(y1), w = sx(x1) - a, h = sy(y0) - b; R(a, b, w, 1, c); R(a, b + h, w, 1, c); R(a, b, 1, h, c); R(a + w, b, 1, h, c); };
   for (const bx of dbgBoxes) rect(bx.x0, bx.y0, bx.x1, bx.y1, '#ffff00');
@@ -436,11 +446,11 @@ function drawBoxes() {
   g.globalAlpha = 1;
 }
 
-function renderFrame() {
+export function renderFrame() {
   const tm = Game.time;
-  view.cpx = Math.round(view.camX * PPU) + FX.shakeX;
-  view.cpy = Math.round(view.camY * PPU) + FX.shakeY;
-  g = screenCtx;
+  view.cpx = Math.round(view.camX * PPU) + Feel.shakeX;
+  view.cpy = Math.round(view.camY * PPU) + Feel.shakeY;
+  setGfx(S.screenCtx);
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   g.drawImage(view.sky, 0, 0);
   for (let i = 0; i < 6; i++) { const a = ((tm * 0.7 + i * 1.7) % 3) < 0.12 ? 1 : 0; if (a) px((i * 97 + 13) % view.W, 12 + (i * 31) % 60, '#ffffff'); }
@@ -469,14 +479,46 @@ function renderFrame() {
 }
 
 /* title-screen hero: the ninja idling in the menu panel */
-function drawHero() {
-  if (!heroCtx) return;
+export function drawHero() {
+  if (!S.heroCtx) return;
   const prev = g;
-  heroCtx.clearRect(0, 0, 72, 84);
-  g = heroCtx;
+  S.heroCtx.clearRect(0, 0, 72, 84);
+  setGfx(S.heroCtx);
   const sc = new Float32Array(SCARF_N * 2), tm = Game.time;
   for (let i = 0; i < SCARF_N; i++) { sc[i * 2] = -4 - i * 3 - Math.sin(tm * 3 + i) * 1.5; sc[i * 2 + 1] = -33 + i * 1.2 + Math.sin(tm * 4 + i * 0.8) * 1.6; }
   const ph = ((tm / 2.2) | 0) % 4;
   drawPlayer({ facing: 1, anim: 'idle', t: tm, run: 0, chip: ph % 2 ? 'cannon' : 'blade', atkStep: 0, atkU: 0, shieldAmt: ph >= 2 ? 0.7 : 0, parryT: 0, blockFlash: 0, recoil: 0, muzzle: 0, xf: 1, rot: 0, warpU: 0, scarf: sc, hasShield: true, hasBlink: true, aim: 0 }, 30, 74);
-  g = prev;
+  setGfx(prev);
+}
+
+
+/* ------------------------------------------------------------------ dev tool: pose sheets (#sprites / #enemies) */
+export function drawViewer() {
+  setGfx(S.screenCtx); g.globalAlpha = 1; R(0, 0, view.W, view.H, '#1a2038');
+  const tm = Game.time;
+  const qv = /[?&]v=(\d+),(\d+)/.exec(location.search), vx = qv ? +qv[1] : 0, vy = qv ? +qv[2] : 0;
+  g.save(); g.translate(-vx * 58, -vy * 64);
+  if (Game.viewer === 'sprites') {
+    const poses = [
+      ['idle', {}], ['run', { run: 0 }], ['run', { run: 1.2 }], ['run', { run: 2.4 }], ['run', { run: 3.6 }], ['jump', {}], ['fall', {}], ['dash', {}], ['hurt', {}],
+      ['idle', { atkStep: 1, atkU: 0.45 }], ['idle', { atkStep: 2, atkU: 0.45 }], ['idle', { atkStep: 3, atkU: 0.55 }],
+    ];
+    CHIP_ORDER.forEach((chip, r) => poses.forEach((ps, i) => {
+      const weapon = r % 2 ? 'cannon' : 'blade';
+      const p = Object.assign({ facing: 1, anim: ps[0], t: tm, run: 0, chip: weapon, atkStep: 0, atkU: 0, shieldAmt: r >= 2 ? 0.8 : 0, parryT: 0, blockFlash: 0, recoil: 0, muzzle: weapon === 'cannon' && i === 9 ? 0.1 : 0, xf: 1, rot: 0, warpU: 0, scarf: viewerScarf(ps[0]), hasShield: r >= 2, hasBlink: r >= 1, aim: weapon === 'cannon' ? (i - 6) * 0.25 : 0 }, ps[1]);
+      if (weapon !== 'blade' && p.atkStep) { p.atkStep = 0; }
+      drawPlayer(p, 34 + i * 58, 58 + r * 64);
+    }));
+  } else {
+    const row = (kind, anims, y) => anims.forEach((a, i) => drawEnemy({ kind, facing: 1, anim: a[0], t: tm, walk: a[1] || 0, flash: 0, tele: a[2] || 0, recoil: 0, muzzle: a[3] || 0 }, 40 + i * 70, y));
+    row('gunner', [['idle'], ['walk', 0], ['walk', 1.6], ['alert'], ['windup', 0, 0.7], ['fire', 0, 0, 1], ['hit']], 60);
+    row('enforcer', [['idle'], ['walk', 0], ['chase', 1.6], ['windup', 0, 0.7], ['lunge'], ['recover'], ['hit']], 130);
+    row('warden', [['idle'], ['walk', 0], ['alert'], ['windup', 0, 0.8], ['fire', 0, 0, 1], ['hit']], 205);
+  }
+  g.restore();
+}
+export function viewerScarf(anim) {
+  const sc = new Float32Array(SCARF_N * 2), run = anim === 'run' || anim === 'dash';
+  for (let i = 0; i < SCARF_N; i++) { sc[i * 2] = -4 - i * (run ? 3.1 : 2.6); sc[i * 2 + 1] = -34 + i * (run ? 0.5 : 1.3) + Math.sin(i) * 0.8; }
+  return sc;
 }

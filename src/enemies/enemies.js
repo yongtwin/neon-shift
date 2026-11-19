@@ -1,4 +1,16 @@
-'use strict';
+import { EN } from '../art/art.js';
+import { hurtPlayer } from '../combat/combat.js';
+import { Feel } from '../combat/feel.js';
+import { SFX } from '../core/audio.js';
+import { Game } from '../core/game.js';
+import { enemies, enemyBullets } from '../core/state.js';
+import { clamp } from '../core/util.js';
+import { FX } from '../effects/fx.js';
+import { ARENAS, SPAWNS } from '../levels/stage1.js';
+import { segmentAt } from '../levels/world.js';
+import { player } from '../player/player.js';
+import { HUD } from '../ui/hud.js';
+
 /* =====================================================================
    Enemy AI. Every enemy runs the same readable loop so players can react:
      patrol → alert ("!") → windup (glowing telegraph) → attack → recover
@@ -6,9 +18,13 @@
    Being hit interrupts a windup (except the armoured Warden) so aggressive
    play suppresses enemy fire.
    ===================================================================== */
-let enemies = [];
+export const ENEMY_DEF = {
+  gunner:   { hp: 3, hw: 0.55, h: 1.9, speed: 1.5,  aggro: 14, sight: 3.3 },
+  enforcer: { hp: 4, hw: 0.55, h: 2.0, speed: 1.8,  aggro: 11, sight: 3.3 },
+  warden:   { hp: 16, hw: 0.9, h: 2.5, speed: 1.1,  aggro: 16, sight: 3.6 },
+};
 
-function makeEnemy(spec, i) {
+export function makeEnemy(spec, i) {
   const d = ENEMY_DEF[spec.kind], seg = segmentAt(spec.x);
   return {
     id: i, kind: spec.kind, x: spec.x, y: 0, facing: -1, dir: -1, hp: d.hp, maxhp: d.hp, hw: d.hw, h: d.h,
@@ -17,25 +33,25 @@ function makeEnemy(spec, i) {
     alive: true, shots: 0, shotT: 0, lungeHit: false, lostT: 0, armor: spec.kind === 'warden',
   };
 }
-function spawnEnemies() { enemies = SPAWNS.map(makeEnemy); }
+export function spawnEnemies() { enemies.length = 0; SPAWNS.forEach((s, i) => enemies.push(makeEnemy(s, i))); }
 
-function enemyShoot(e, speed, yOff, xOff, vy = 0) {
+export function enemyShoot(e, speed, yOff, xOff, vy = 0) {
   enemyBullets.push({ x: e.x + e.facing * xOff, y: e.y + yOff, vx: e.facing * speed, vy, life: 2.1, dmg: 1, reflected: false, owner: e });
   e.recoil = 1; e.muzzle = 0.08;
   FX.hitSparks(e.x + e.facing * (xOff + 0.4), e.y + yOff, e.facing, 0, '#ff6a5a', '#ffd27a');
   SFX.play('eshoot');
 }
 
-function setState(e, s) { e.state = s; e.st = 0; e.tele = 0; }
+export function setState(e, s) { e.state = s; e.st = 0; e.tele = 0; }
 
-function wardenSlam(e) {                                               // ground shockwaves both ways — jump them (or guard)
+export function wardenSlam(e) {                                               // ground shockwaves both ways — jump them (or guard)
   for (const dir of [-1, 1]) enemyBullets.push({ x: e.x + dir * 0.9, y: 0.35, vx: dir * 11, vy: 0, life: 1.4, dmg: 1, wave: true, owner: e });
   FX.dust(e.x - 0.8, 0, 8, -1); FX.dust(e.x + 0.8, 0, 8, 1);
-  FX.ring(e.x, 0.3, 4, 40, 0.3, EN.r2); FX.kick(5);
+  FX.ring(e.x, 0.3, 4, 40, 0.3, EN.r2); Feel.kick(5);
   SFX.play('hit', 3);
 }
 
-function updateEnemy(e, dt) {
+export function updateEnemy(e, dt) {
   if (!e.alive) return;
   const d = ENEMY_DEF[e.kind], p = player;
   e.t += dt; e.st += dt;
@@ -53,7 +69,7 @@ function updateEnemy(e, dt) {
   if (e.kind === 'warden' && !e.phase2 && e.hp <= e.maxhp / 2) {          // boss phase 2: OVERDRIVE
     e.phase2 = true; e.flash = 0.3; e.cooldown = 0.6; setState(e, 'alert');
     FX.text('OVERDRIVE', e.x, e.y + e.h + 1, EN.r2, 1.2); FX.ring(e.x, e.y + 1.2, 4, 60, 0.4, EN.r1);
-    FX.screenFlash(0.3, '#ff6a5a'); FX.kick(5); SFX.play('charge');
+    Feel.screenFlash(0.3, '#ff6a5a'); Feel.kick(5); SFX.play('charge');
   }
 
   if (e.stun > 0) {                                                      // flinch (hit reaction)
@@ -138,11 +154,11 @@ function updateEnemy(e, dt) {
   }
 }
 
-function updateEnemies(dt) { for (const e of enemies) updateEnemy(e, dt); }
+export function updateEnemies(dt) { for (const e of enemies) updateEnemy(e, dt); }
 
 /* ------------------------------------------------------------------ lockdown arenas */
-function resetArenas() { for (const a of ARENAS) { a.spawned = false; a.cleared = false; a.wallT = 0; } Game.arena = null; }
-function updateArenas(dt) {
+export function resetArenas() { for (const a of ARENAS) { a.spawned = false; a.cleared = false; a.wallT = 0; } Game.arena = null; }
+export function updateArenas(dt) {
   const p = player;
   for (const a of ARENAS) a.wallT = Math.max(0, a.wallT - dt);
   if (!Game.arena) {
@@ -159,7 +175,7 @@ function updateArenas(dt) {
         }
         HUD.setKills(Game.kills, enemies.length);
       }
-      HUD.toast(a.title, '#ff6a5a', 1.8); SFX.play('warn'); FX.kick(2);
+      HUD.toast(a.title, '#ff6a5a', 1.8); SFX.play('warn'); Feel.kick(2);
       break;
     }
     return;

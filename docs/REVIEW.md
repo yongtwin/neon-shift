@@ -1,0 +1,115 @@
+# NEON//SHIFT — Independent Review (Agent D)
+
+**Round 1 — audit of `baseline-v0.6`** (legacy classic-script build, `js/*.js` at tag `baseline-v0.6`, commit `0736b86`).
+Line numbers below refer to `git show baseline-v0.6:<file>`. Agent A's `src/` port inherits everything here unless fixed.
+
+Method: full read of all 12 JS modules + CSS; behavioural probes driven through `window.NS` with a frozen loop
+(`NS.game.freeze = true` + `NS.step`) in Edge via Playwright against http://localhost:8123; screenshots in
+`docs/screenshots/review/`. Every "Verified" item below was measured, not inferred. Items marked "Code" are from reading
+the source only.
+
+Severity: **critical** = breaks a stated invariant / makes a core system pointless; **major** = clearly visible to players
+or blocks Phase 2 goals; **minor** = polish / hygiene.
+
+## Probe results (raw evidence)
+
+| Probe | Result |
+|---|---|
+| Hold `L` (shield) facing a gunner 4 u away for 20 s simulated | HP 6 → **6**. Holding the shield is total frontal immunity. |
+| Hold `J` next to an enforcer (4 HP) | Enforcer dead in **22 frames (0.37 s)**, **0 windups**, player took 0 damage. |
+| Kill each of the first 5 regular enemies with held `J` | Every one died on **combo step 2**. The finisher (step 3) never lands on a regular enemy. |
+| Jump apex at 30 / 60 / 144 Hz | **2.573 / 2.687 / 2.753** units (7 % spread). |
+| Run distance in first 0.25 s at 30 vs 144 Hz | **2.98 vs 2.46** units (21 % spread). |
+| Five A/D taps while **paused** | Player moved x 5.00 → **6.75** while paused. |
+| Tap `W` while paused, then unpause | Player **jumps** on the first unpaused frame (vy 13.2). |
+| Press `J` 33 ms into slash 1 (not held) | Second slash **never comes out** (buffer expires before cooldown). |
+| Swing-1 forward lunge, no direction held | **0.23** units — imperceptible. |
+| Enemy displacement from slash 1 | **0.82** units. |
+| Corrupt save strings (`{bad`, `"x"`, `{"a":1}`, `null`, mixed array) | Never throws; falls back to `['blade']`; unknown ids filtered. Robust, but unversioned. |
+| Blink at x 79.5 inside the yard lockdown | Clamped to 80.2 by the wall clamp (no escape). OK. |
+| Slash 1 timing | Hit registers on frame 4 (t = 0.067 s), hit-stop 0.05 s. |
+
+## Issue table
+
+| ID | Sev | Area | File:line | Description | Evidence / repro | Recommended fix |
+|---|---|---|---|---|---|---|
+| R-001 | critical | Combat design | combat.js:87-103, player.js:290-293 | Shield has no cost: no stamina, no chip damage, no guard-break, no timeout. Holding `L` blocks every bolt, lunge and contact from the front indefinitely; parry (the skill expression) is strictly worse than holding. | Verified: 20 s held in front of a gunner, 0 damage. | Add guard meter (e.g. 3 blocks → guard break 0.6 s stagger, regen 1/s when lowered), or chip damage 0.25 HP per blocked hit; keep parry free. Slow-walk 0.6× is not a cost. |
+| R-002 | critical | Combat design / AI | enemies.js:59-63, combat.js:18, player.js:304 | Hit-stun (0.3 s) exceeds the blade cadence (0.22 s) and every hit resets windups → any non-armoured enemy is permanently stun-locked. Combined with "hold J = auto-swing", combat is a hold-one-button activity with no threat. | Verified: enforcer killed in 0.37 s with 0 windups. | Per-enemy poise: stun only when poise breaks (e.g. 3 poise, slash = 1, finisher = 3); give enforcers super-armour during windup; after 2 consecutive flinches grant 0.5 s hyper-armour. Remove held-J auto-repeat (R-008). |
+| R-003 | major | Combat feel / balance | world.js:24-26, player.js:17-19 | Gunner HP 3 / enforcer HP 4 vs slash dmg 2 → enemies die on hit 2. The finisher — the only swing with big hit-stop (0.085), kb 14, screen flash and dust — never lands on a regular enemy. Players only ever feel the two weakest swings. | Verified: 5/5 kills on combo step 2. | Rebalance: slash 1/2 = 1 dmg, finisher = 3; gunner 4 HP, enforcer 6 HP, so a full combo kills a gunner. Or make step 1/2 non-lethal ("leave at 1 HP") on regular enemies. |
+| R-004 | major | Combat feel | player.js:16-19, art.js:77-81 | No anticipation / commitment / recovery. Swing total 0.22 s with a 26 ms wind-up keyframe (u 0→0.12), `cd == dur` (zero recovery), and the attack never slows movement — the ninja slides at full run speed (12.2 u/s) while waving the arm. Reads as weightless. | Code + screenshots 03/04/05. | Per swing: anticipation 50–70 ms (pose pulls back, small forward step), active 50–80 ms, recovery 120–180 ms cancellable into dash/jump/next swing after the active window. Clamp ground speed to ~30 % during active+recovery. |
+| R-005 | major | Combat feel | player.js:175, 333 | Forward lunge is erased by the acceleration lerp the next frames (target vx = 0 when no direction held). | Verified: 0.23 u lunge. | Apply lunge as a timed impulse that bypasses the run lerp for the active window (e.g. `p.lungeT = 0.08` with fixed vx), 0.6–1.0 u total; finisher 1.5 u. |
+| R-006 | major | Combat feel | player.js:17-19, fx.js:28, combat.js:23 | Hit-stop is 3 frames (0.05 s) for slashes 1–2 and global. Shake 2.2 art-px decays with half-life ~53 ms (fx.js:111) — barely registers. Hit-stop is identical on hit 1 of a chain and on a kill-adjacent hit. | Code; HUD debug shows hs 0.05. | Slash 1/2: 0.07–0.09 s; finisher 0.13–0.16 s; kill 0.18 s (raise the 0.14 cap). Add per-entity freeze + 1–2 px victim shake during stop. Make shake directional along hit dir and decay slower (exp(-dt*8)). |
+| R-007 | major | Combat feel / VFX | player.js:21-23, 186-187; fx.js:126-148 | Slash crescent is centred on the chest (oy 1.25) with r = 48 px, so for slashes 1–2 most of the arc is drawn **above both heads**; the part crossing the enemy is thin. Impact sparks are 1-px lines (fx.js:164-167) that vanish against the busy city. Hits do not visibly "connect" at the enemy body. | Screenshot `03-slash1-connect.png`: arc is a dome over the platform, enemy shows a white flash only. | Centre arcs at the blade hand path, r ≈ 30–36 px, horizontal-ish sweeps for 1–2, overhead for 3. Add an impact sprite on the enemy (3–4 frame star/slash-cross 16–24 px), 2-px sparks, short directional smear on the victim, and enemy flash ≥ 0.12 s. |
+| R-008 | major | Input / feel | player.js:282, 304 | Attack buffer (0.16 s) is shorter than the swing cooldown (0.22 s): a press in the first ~60 ms of a swing is silently dropped. Meanwhile holding `J` auto-repeats swings, so the only reliable way to combo is to hold the button — no rhythm. | Verified: press at 33 ms → no second swing. | Buffer the next swing until the current one's cancel point (store `queuedAttack` for the whole swing, consumed at recovery start). Remove auto-repeat on hold for the blade (keep hold for cannon charge). |
+| R-009 | major | Combat feel / audio | audio.js:60-64, 106-114, 148-153 | Hit SFX (noise 0.26 + square 0.10 gain) sit at/under the music kick (0.85 × bus 0.42 ≈ 0.36) and there is no ducking. Slash whoosh fires at swing start and the hit 50 ms later, overlapping into one blur. No layered "body" for finisher/crit beyond pitch. | Code. | Duck music bus −6 dB for 150 ms on hit/kill; add a low sine thump (80→40 Hz, 0.12 s) + transient click to hits; separate finisher/crit sample with sub layer; scale hit volume with power. |
+| R-010 | major | Combat feel | combat.js:19, enemies.js:45 | Knockback 7–8 decays with `exp(-9t)` → 0.82 u per hit; no vertical pop, no hit pose beyond −4 px lean. Enemies barely react. | Verified 0.82 u. | Knockback 1.2–1.5 u for slashes, 3 u + small launch (vy 4) for finisher/crit, enemy-side 2–3 frame "hurt" pose with squash; clamp against segment ends with a wall-bounce spark. |
+| R-011 | major | Input | input.js:101-105, 107-115 | Gamepad disconnect leaves `touch.left/right/pAttack/pShield/pUp/pDown` at their last values (poll returns early when no pad) → player runs/attacks/shields forever. Violates "keyboard events must never silently stop controlling the player" in spirit. | Code: `if (!gp) return;` before any reset. | On no pad (or on `gamepaddisconnected`), clear all pad-owned fields. Store pad state in its own object instead of sharing `touch`. |
+| R-012 | major | Input | input.js:67, player.js:105-109, main.js:15 | "First-press nudge" teleports the player 0.35 u and sets vx 8 on every keydown, bypassing pause, hit-stop, dash, arena walls (until next sim frame) and ledges. It is a band-aid over an old input bug, not a fix. | Verified: 5 taps while paused moved the player 1.75 u. | Delete the nudge. If short taps must register, latch a `tapDir` edge flag consumed by the sim (min 1 frame of run accel). |
+| R-013 | major | Input | main.js:36-40, 73; input.js:54-58 | Edge flags (`pressed.*`) set during pause/title persist and fire on resume; restart clears only jump/dash/attack, not blink. | Verified: `W` during pause → jump on unpause. | Clear all `pressed` flags on pause, unpause and restart; ignore action keys while paused. |
+| R-014 | major | Physics | main.js:107-114, player.js:333, 339 | Variable timestep (dt clamped to 1/30): jump height and acceleration depend on refresh rate; below 30 fps the game runs in slow motion. Per-frame `Math.random() < k` spawns (player.js:312, 330; combat.js:187) also scale with fps. | Verified: apex 2.57/2.69/2.75; run 2.98 vs 2.46 u. | Fixed-step sim (1/120 s accumulator, max 5 steps/frame), render interpolation; replace `min(1, dt*k)` lerps with `1 - exp(-k*dt)`; rate-based spawns. `NS.step` should step the fixed tick. |
+| R-015 | major | Combat | combat.js:45-47, player.js:271 | Facing updates every frame from input, including mid-swing; `bladeHitCheck` reads current facing, so pressing back during the active window flips the hitbox (and lunge) behind the player. | Verified: facing −1 during swing 1. | Lock facing at swing start (`p.atkFacing`) for hitbox, FX and lunge; allow turnaround only in recovery. |
+| R-016 | major | Architecture | player.js:141, 197-199; art.js:89 | Simulation depends on the art module: `shoulderWorld()` calls `poseOf()` which writes the global `Q`, and the scarf/ muzzle positions use art pixels. Aim, bullets and auto-aim change if an artist edits pose numbers. | Code. | Gameplay anchors (shoulder, muzzle, hit origin) as constants in `src/player/`; art reads them, never the reverse. |
+| R-017 | major | Architecture | all `js/*.js` | Classic scripts sharing ~150 globals with circular use (`input.js` calls `Game`/`HUD`/`SFX` defined later; `g` is a swapped global context). No module boundaries, no tests until now. | Code. | Agent A's ES-module port: explicit imports, a `ctx` object passed into update/render, single source of truth for constants (CHIP_INFO.cool duplicates player.cdMax). |
+| R-018 | major | Save | world.js:6, 47-58 | Save is an unversioned array under `neonshift_chips_v1`; no schema version, no migration, no checkpoint/settings. CLAUDE.md requires a versioned schema. (Corruption handling itself is good — verified.) | Probe above. | `{v:2, chips:[…], settings:{…}, progress:{stage, checkpoint}}`, `migrate(v1Array)` path, validation per field, write via a single `Save.commit()` with try/catch; keep the reading of the v1 key. |
+| R-019 | major | Visual | art.js:14-19, 344-520; screenshots 12/13 | Ninja and enemies share the same skeleton, proportions, helmet shape and blue-steel palette; the player reads as "a robot with a pink scarf". Dark navy body (#101a36–#33489a) on a dark purple city has poor figure/ground contrast at gameplay scale; only the cyan blade pops. | `12-sprites-z4.png` vs `13-enemies-z4.png`; `01-idle.png`. | See Visual verdict. Distinct silhouette (hood/mask/topknot or visor fin, slimmer limbs, longer scarf), rim light / 1-px light outline on the player only, warmer/brighter player value range, enemies pushed toward desaturated gunmetal + red. |
+| R-020 | major | Visual / readability | css/style.css:49, 17-37; screenshot 11 | HUD text (9–10 px labels, 8 px chip sub-labels) sits directly on the busy neon city without a backing plate; top-right stats collide with world signs (`TECH` over "HOSTILES"). Toast at 30 % height overlaps the action. | `11-warden-fire.png`, `01-idle.png`. | Semi-opaque panels behind HUD clusters, min 11 px text, toasts moved to upper band, hint line above boss bar. |
+| R-021 | minor | Combat | combat.js:98-101, enemies.js:51 | Shielded body contact returns 'block' with no knock-apart; enemy keeps overlapping and re-triggering block every 0.14 s pushing the player back (vx −4). | Code. | On blocked contact push both apart ≥ 1 u and give the enemy 0.3 s recover. |
+| R-022 | minor | AI | enemies.js:84 | Gunners only shoot when `dist > 2`; standing 1–2 u from a gunner is perfectly safe forever (contact range 0.95). | Code. | Add a close-range melee/shove or back-step behaviour. |
+| R-023 | minor | Combat | combat.js:130-131 | `doParry` raises `parryT` to ≥ 0.12 — keeps the window open after a parry (multi-parry of a burst is intended?) but also means `perfect` can never trigger on a 2nd bolt of a volley. Undocumented. | Code. | Make the rule explicit; test it. |
+| R-024 | minor | Combat | combat.js:189-190 | Enemy bolt that hits during i-frames is "ignored" and keeps flying; with dash i-frames this is fine, but after a hurt the same bolt can't re-hit — OK. However bullets never collide with level geometry or arena walls (player bullets fly through laser walls and hit enemies outside). | Code. | Kill player bullets at active arena walls; consider catwalk occlusion. |
+| R-025 | minor | Chips | player.js:61-65, 320 | Swapping weapon mid-swing silently cancels the swing but keeps blade cooldown; swapping mid-charge discards the charge with no feedback; new weapon fires while still at `xf≈0` (invisible). | Code. | Define the rule: swap allowed any time, cancels current action with a visible "snap"; cannon usable after xf ≥ 0.6 (≈0.1 s), or instant but visible. Test with Playwright. |
+| R-026 | minor | Chips / tests | main.js:187 | `NS.unlockAll()` writes to real localStorage — running tests in a normal profile permanently unlocks the user's chips. | Code. | Test hooks should use an in-memory save or a `?test` storage namespace. |
+| R-027 | minor | Physics | player.js:340-344 | One-way catwalks cannot be dropped through (no down+jump); no terminal velocity; landing loop lets the *last* matching platform win (fine today, fragile). Dead-body landing (392) ignores player width. | Code. | Add drop-through (`S`+jump, ignore that platform for 0.2 s), cap fall speed (~22 u/s), pick the highest valid platform. |
+| R-028 | minor | Physics | player.js:345, combat.js:106-108 | Coyote time is still live after being knocked off a ledge by damage, allowing a "ground" jump in the air plus the double jump. No variable jump height (release does not cut). | Code. | Zero `coyote` on hurt/knockback; cut vy by 50 % on jump release while rising. |
+| R-029 | minor | Input | main.js:175 | `N` (music) handler ignores `e.repeat`; holding N toggles music repeatedly. | Code. | Gate on `!e.repeat`, route through the main key handler. |
+| R-030 | minor | Hit-stop | main.js:76 | `FX.hitstop -= dt` leaves negative remainders (observed −0.003) and the frame that ends the stop simulates nothing; slow-mo timer does not tick during hit-stop (fine) but the two interact undocumented. Always ends (cap 0.14) — invariant holds. | NS log. | Clamp at 0; carry the leftover into the sim step; unit-test "hit-stop always ends" incl. overlapping stops. |
+| R-031 | minor | Perf | combat.js:183, 193; player.js:141-199; enemies.js:152,170 | Per-frame allocations: two `filter` arrays, `shoulderWorld()/muzzleWorld()` objects (3–5 per frame), `hurtbox()` object per enemy per bullet, `snapshot()+scarf.slice()` every 35 ms in a dash, `enemies.some` closures, `CHECKPOINTS.slice(1)` in render, `dbgBoxes` pushed even with F4 off. | Code. | In-place compaction, scratch objects, skip debug boxes unless enabled. Small today; matters for 3 stages + boss. |
+| R-032 | minor | Perf | fx.js:33-38, 157-180; util.js:64-77; fx.js:119-123 | Particle pool (700) is scanned linearly on alloc and fully iterated each draw; sparks/debris are Bresenham lines of per-pixel `fillRect`; each dash ghost re-rasterises the whole procedural ninja (up to 14). Rendering is fillRect-bound. | Code (FX.live in F3 overlay). | Keep live/free index lists; cache the ninja pose into an offscreen sprite once per frame and blit ghosts from snapshots; cap ghosts at 6. |
+| R-033 | minor | HUD | hud.js:84, combat.js:31 | Kill counter total jumps from 10 to 12 when the ambush spawns; `$('killcount')`, `$('combo')` etc. looked up every frame. | Screenshot progression. | Count arena waves in the total from the start; cache element refs. |
+| R-034 | minor | Process | README.md | README still says "Double-click NEON_SHIFT_v04.html" for a v0.6 build, claims "impactful combat" — unverified marketing that contradicts the user's report. | README. | Rewrite docs in Phase 5 from verified behaviour only. |
+
+**Counts:** critical 2 · major 18 · minor 14 (total 34).
+
+## Top 5 causes of weak combat feel
+
+1. **No commitment or weight in the swing (R-004, R-005, R-015).** 26 ms wind-up, zero recovery, full-speed movement during attacks and a 0.23 u lunge: the body never sells the strike, so even a connecting hit looks like the arm brushed past.
+2. **Enemies are stun-locked and die before the payoff (R-002, R-003).** Hit 2 kills; the finisher — the only hit with real hit-stop, knockback and flash — never connects with a regular enemy, and enemies never get a chance to threaten you, so there is no tension to release.
+3. **Impact frames are too small (R-006, R-010).** 3-frame hit-stop, ~50 ms shake half-life, 0.82 u knockback, 0.09 s flash and a tiny lean. Each layer is present but below the perception threshold, and none scales with the importance of the hit.
+4. **The VFX don't land on the target (R-007).** The slash crescent arcs over everyone's heads from the chest; impact sparks are 1-px lines lost in a busy neon background. In stills (`03-slash1-connect.png`) you can tell a hit happened only because the enemy turns white.
+5. **Input and audio undermine responsiveness (R-008, R-009).** Early presses are dropped (buffer < swing), so mashing feels unreliable and holding auto-swings without rhythm; hit sounds are masked by the music kick and blur into the whoosh.
+
+## Visual verdict
+
+**Placeholder-plus, not a designed cyberpunk ninja.** The procedural rig animates smoothly and the pink scarf + cyan blade give it
+some identity, but at gameplay scale (~36 px tall in a 270 px buffer) the character is a dark-navy stick figure with a round helmet that
+is built from the same skeleton, proportions and palette as the enemy robots (`12-sprites-z4.png` vs `13-enemies-z4.png`). There is
+no mask/hood/eye read, no costume shapes (shoulder plates, belt, sheath), weak figure/ground contrast against the purple city, and the
+blade is often held behind the body in the run cycle.
+
+- **Transformations:** distinguishable but mainly by recolour: visor cyan → amber for the cannon, a violet arc for the shield
+  (`21-closeup-shield.png`, faint at 1×), pink pads on the shins for blink. The R-ARM swap is clear; the shield and blink slots are
+  hard to read in motion.
+- **Do hits connect?** Only through the enemy's white flash. The slash arc floats above the targets, sparks are too thin, the knockback is
+  invisible. Kills read well (debris + ring + flash, `05-slash3-finisher.png`), hits do not.
+- **Cannon / blink:** cannon muzzle flash and lock-on brackets read well (`23-closeup-cannon-fire.png`); blink's pink afterimage trail is the
+  strongest effect in the game (`09-blink.png`), maybe too strong relative to the slash.
+- **HUD:** stylish chip cards, but small (8–10 px) text without backing plates collides with the neon background
+  (`11-warden-fire.png`: "HOSTILES" under a `TECH` sign); the toast covers the play area.
+- **Environment:** the parallax city, signs and rain are the most finished art in the build; it currently out-shines the characters,
+  which is backwards for an action game. Darken/desaturate the mid-ground band behind the play lane.
+
+## Screenshots (docs/screenshots/review/)
+
+`00-title`, `01-idle`, `02-run`, `03-slash1-connect`, `03b-slash1-connect-hitboxes`, `04-slash2`, `05-slash3-finisher`, `05b-after-kill`,
+`06-cannon-fire`, `06b-cannon-bolt-travel`, `07-cannon-charging`, `07b-cannon-lance`, `08-shield-raised`, `09-blink`,
+`10-enforcer-windup`, `11-warden-fire`, `12-sprites-z4`, `13-enemies-z4`, `14-sprites-z8`, `15-sprites-z8-v6`,
+`20-closeup-idle`, `21-closeup-shield`, `22-closeup-cannon-idle`, `23-closeup-cannon-fire`.
+(`24-closeup-slash-connect` clipped off-frame — ignore; use `03`.) Note `06-cannon-fire` was staged with the player in the x 21–23 pit;
+`23` is the clean cannon shot.
+
+## Acceptance asks for Phase 2 (what I will check next round)
+
+- Playwright tests for: shield guard-break, stun-lock absence (enemy attacks within N s of continuous blade pressure), finisher reachable on
+  a regular enemy, early-press buffering, facing lock, pause input isolation, gamepad-disconnect release, fixed-step determinism
+  (apex identical at 30/60/144 Hz), save v1→v2 migration + corrupt fallback.
+- Before/after GIF or frame strips of slash 1/2/3 connecting, with hit-stop and knockback values logged.

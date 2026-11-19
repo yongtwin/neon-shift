@@ -1,16 +1,26 @@
-'use strict';
+import { drawPlayer } from '../art/art.js';
+import { R, crescent, disc, g, glow, line, makeCanvas, ring, text, textW, withCtx } from '../art/pixel.js';
+import { Feel } from '../combat/feel.js';
+import { TAU, easeOut, lerp, rnd } from '../core/util.js';
+import { sx, sy } from '../render/render.js';
+
 /* =====================================================================
    Combat juice: pooled particles, sword slashes, afterimages, popup text,
    beams, screen shake, screen flash and the global hit-stop timer.
    Everything is pooled / bounded so long fights never allocate per frame.
    ===================================================================== */
-const PT = { SPARK: 0, CHIP: 1, RING: 2, PUFF: 3, FLASH: 4, DEBRIS: 5, BIT: 6 };
-const POOL = 700;
+export const PT = { SPARK: 0, CHIP: 1, RING: 2, PUFF: 3, FLASH: 4, DEBRIS: 5, BIT: 6 };
+export const POOL = 700;
 
-const FX = {
-  hitstop: 0,                 // seconds of frozen simulation remaining
-  shake: 0, kx: 0, shakeX: 0, shakeY: 0,
-  flash: 0, flashCol: '#ffffff',
+export const FX = {
+  /* hit-stop / shake / flash timers live in combat/feel.js; mirrored here so FX.<field> (window.NS.FX) keeps working */
+  get hitstop() { return Feel.hitstop; }, set hitstop(v) { Feel.hitstop = v; },
+  get shake() { return Feel.shake; }, set shake(v) { Feel.shake = v; },
+  get kx() { return Feel.kx; }, set kx(v) { Feel.kx = v; },
+  get shakeX() { return Feel.shakeX; }, set shakeX(v) { Feel.shakeX = v; },
+  get shakeY() { return Feel.shakeY; }, set shakeY(v) { Feel.shakeY = v; },
+  get flash() { return Feel.flash; }, set flash(v) { Feel.flash = v; },
+  get flashCol() { return Feel.flashCol; }, set flashCol(v) { Feel.flashCol = v; },
   parts: [], slashes: [], ghosts: [], texts: [], beams: [],
   cursor: 0, live: 0,
 
@@ -22,12 +32,12 @@ const FX = {
   reset() {
     for (const p of this.parts) p.on = false;
     this.slashes.length = 0; this.ghosts.length = 0; this.texts.length = 0; this.beams.length = 0;
-    this.hitstop = 0; this.shake = 0; this.flash = 0;
+    Feel.reset();
   },
 
-  stop(dur) { if (dur > this.hitstop) this.hitstop = Math.min(0.14, dur); },       // hit-stop: freeze the sim briefly
-  kick(mag, dirX = 0) { if (mag > this.shake) { this.shake = mag; } this.kx = dirX; },
-  screenFlash(a, col = '#ffffff') { this.flash = Math.max(this.flash, a); this.flashCol = col; },
+  stop(dur) { Feel.stop(dur); },
+  kick(mag, dirX = 0) { Feel.kick(mag, dirX); },
+  screenFlash(a, col = '#ffffff') { Feel.screenFlash(a, col); },
 
   alloc() {
     for (let n = 0; n < POOL; n++) {
@@ -106,14 +116,7 @@ const FX = {
     for (let i = this.texts.length - 1; i >= 0; i--) { const t = this.texts[i]; t.life -= dt; t.y += dt * 1.6; if (t.life <= 0) this.texts.splice(i, 1); }
     for (let i = this.beams.length - 1; i >= 0; i--) { this.beams[i].life -= dt; if (this.beams[i].life <= 0) this.beams.splice(i, 1); }
   },
-  updateScreen(dt) {                                      // runs even during hit-stop so shake still plays out
-    if (this.shake > 0.05) {
-      this.shake *= Math.exp(-dt * 13);
-      this.shakeX = Math.round((Math.random() * 2 - 1) * this.shake + this.kx * this.shake * 0.8);
-      this.shakeY = Math.round((Math.random() * 2 - 1) * this.shake * 0.7);
-    } else { this.shake = 0; this.shakeX = 0; this.shakeY = 0; }
-    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 7);
-  },
+  updateScreen(dt) { Feel.updateScreen(dt); },
 
   /* ---- drawing (called by the renderer; sx/sy are the world->screen helpers) ---- */
   drawBelow() {                                           // afterimages + slashes sit behind particles

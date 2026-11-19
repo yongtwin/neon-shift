@@ -1,4 +1,16 @@
-'use strict';
+import { ACCENT, Q, poseOf } from '../art/art.js';
+import { syncSlots, unlockChip } from '../chips/chips.js';
+import { bladeHitCheck, blinkHit, killPlayer } from '../combat/combat.js';
+import { Feel } from '../combat/feel.js';
+import { SFX } from '../core/audio.js';
+import { Game } from '../core/game.js';
+import { Aim, inputAimDown, inputAimUp, inputAttackHeld, inputLeft, inputRight, inputShieldHeld, pressed } from '../core/input.js';
+import { bullets, enemies, enemyBullets } from '../core/state.js';
+import { DEG, PPU, TAU, clamp, rnd } from '../core/util.js';
+import { FX, PT } from '../effects/fx.js';
+import { CHECKPOINTS, PICKUPS, PLAT, WORLD_W } from '../levels/stage1.js';
+import { HUD } from '../ui/hud.js';
+
 /* =====================================================================
    Player controller.
    Movement constants are the v0.3 values (confirmed working):
@@ -9,20 +21,20 @@
    LEGS Blink each have their own button and work at the same time.
    `player.chip` = the weapon currently on the R-ARM.
    ===================================================================== */
-const MOVE = { gravity: 34, jump: 13.8, run: 12.2, dash: 28, dashTime: 0.2, dashCd: 0.78, accelGround: 18, accelAir: 11 };
-const PARRY_WINDOW = 0.2, PARRY_COOLDOWN = 0.55;
-const SCARF_N = 9;
+export const MOVE = { gravity: 34, jump: 13.8, run: 12.2, dash: 28, dashTime: 0.2, dashCd: 0.78, accelGround: 18, accelAir: 11 };
+export const PARRY_WINDOW = 0.2, PARRY_COOLDOWN = 0.55;
+export const SCARF_N = 9;
 
-const SWING = [   // blade combo: slash → reverse slash → finisher
+export const SWING = [   // blade combo: slash → reverse slash → finisher
   { dur: 0.22, cd: 0.22, act: [0.06, 0.15], fx: 0.05, dmg: 2, kb: 7,  hs: 0.05,  shake: 2.2, lunge: 6,  box: [-0.2, 2.7, -0.1, 2.3] },
   { dur: 0.22, cd: 0.22, act: [0.06, 0.15], fx: 0.05, dmg: 2, kb: 8,  hs: 0.055, shake: 2.6, lunge: 6,  box: [-0.3, 2.7, -0.2, 2.4] },
   { dur: 0.34, cd: 0.42, act: [0.10, 0.22], fx: 0.09, dmg: 3, kb: 14, hs: 0.085, shake: 4.8, lunge: 12, box: [-0.5, 3.4, -0.3, 2.7] },
 ];
-const SLASH_FX = [   // arc parameters: [startDeg, endDeg, radiusPx, widthPx]
+export const SLASH_FX = [   // arc parameters: [startDeg, endDeg, radiusPx, widthPx]
   [150, -35, 48, 9], [-50, 150, 48, 9], [135, -80, 64, 13],
 ];
 
-const player = {
+export const player = {
   x: 3, y: 0, vx: 0, vy: 0, w: 0.7, facing: 1, onGround: true, airJumps: 0,
   hp: 6, maxhp: 6, inv: 0, dash: 0, dashCd: 0, checkpoint: 0,
   chip: 'blade', unlocked: new Set(['blade']),
@@ -35,7 +47,7 @@ const player = {
   coyote: 0, jumpBuf: 0, charging: false, chargeT: 0, charge: 0, critT: 0,
 };
 
-function resetPlayer() {
+export function resetPlayer() {
   const p = player;
   Object.assign(p, {
     x: 3, y: 0, vx: 0, vy: 0, facing: 1, onGround: true, airJumps: 0, hp: p.maxhp, inv: 0, dash: 0, dashCd: 0, checkpoint: 0,
@@ -49,66 +61,19 @@ function resetPlayer() {
   for (const k in p.cd) p.cd[k] = 0;
   resetScarf();
 }
-function resetScarf() {
+export function resetScarf() {
   const s = player.scarf;
   for (let i = 0; i < SCARF_N; i++) { s[i * 2] = -4 - i * 3; s[i * 2 + 1] = -34 + i * 0.4; }
 }
 
-/* ------------------------------------------------------------------ chips / body slots */
-const WEAPONS = ['blade', 'cannon'];
-function syncSlots() { player.hasShield = player.unlocked.has('shield'); player.hasBlink = player.unlocked.has('blink'); }
-
-function switchChip(id, silent) {                                       // R-ARM weapon swap (Blade <-> Cannon)
-  const p = player;
-  if (!WEAPONS.includes(id) || !p.unlocked.has(id) || p.chip === id || p.dead) return;
-  p.chip = id; p.xf = 0;
-  p.atkStep = 0; p.atkU = 0; p.muzzle = 0; p.recoil = 0;
-  HUD.setActive(id, true);
-  if (silent) return;
-  const A = ACCENT[id], hx = p.x + p.facing * 0.4, hy = p.y + 1.2;
-  FX.bits(hx, hy, A.m, 12);
-  FX.ring(hx, hy, 3, 20, 0.22, A.m);
-  FX.disc(hx, hy, 6, 0.1, '#ffffff');
-  FX.text(CHIP_INFO[id].name, p.x, p.y + 2.9, A.m, 0.7);
-  FX.kick(1.2);
-  SFX.play('xform');
-}
-function swapWeapon() {
-  const p = player;
-  if (!p.unlocked.has('cannon')) { HUD.toast('NO SECOND WEAPON YET', '#8ea3c4', 1.2); return; }
-  switchChip(p.chip === 'blade' ? 'cannon' : 'blade');
-}
-function cycleChipDir() { swapWeapon(); }
-
-const UNLOCK_HINT = {
-  cannon: '[Q] swaps BLADE / CANNON  ·  cannon auto-aims, hold [I] up / [S] down to steer',
-  shield: 'hold [L] to guard while you fight  ·  tap it right before a hit to PARRY',
-  blink:  '[K] warps through enemies with any weapon',
-};
-function unlockChip(id) {
-  const p = player;
-  if (p.unlocked.has(id)) return;
-  p.unlocked.add(id); saveUnlocked(p.unlocked); syncSlots();
-  HUD.setUnlocked(p.unlocked);
-  if (WEAPONS.includes(id)) switchChip(id);                              // a new weapon is equipped straight away
-  const A = ACCENT[id];
-  HUD.toast(`◈ ${CHIP_INFO[id].slot} UPGRADE: ${CHIP_INFO[id].name}`, A.m, 2.2);
-  HUD.hint(UNLOCK_HINT[id], A.m);
-  const oy = id === 'blink' ? 0.3 : 1.1;                                 // burst on the body part that changed
-  FX.ring(p.x, p.y + oy, 4, 40, 0.4, A.m); FX.ring(p.x, p.y + oy, 2, 28, 0.3, '#ffffff');
-  FX.burst(p.x, p.y + oy, 26, A.m, 11); FX.bits(p.x, p.y + oy, A.l, 14);
-  FX.screenFlash(0.25, A.l);
-  SFX.play('pickup');
-}
-
 /* ------------------------------------------------------------------ actions */
-function nudge(dir, amt) {
+export function nudge(dir, amt) {
   const p = player;
   if (p.dead) return;
   p.facing = dir; p.vx = dir * 8; p.x = clamp(p.x + dir * amt, 0.5, WORLD_W - 2);
 }
 
-function doJump(fromGround) {
+export function doJump(fromGround) {
   const p = player;
   p.vy = MOVE.jump; p.onGround = false; p.coyote = 0; p.airJumps = fromGround ? 0 : p.airJumps + 1;
   if (fromGround) { FX.dust(p.x, p.y, 4, -p.facing); SFX.play('jump'); }
@@ -120,17 +85,17 @@ function doJump(fromGround) {
   }
 }
 
-function doDash() {
+export function doDash() {
   const p = player;
   p.dash = MOVE.dashTime; p.dashCd = MOVE.dashCd; p.inv = Math.max(p.inv, 0.16);
   p.vx = p.facing * MOVE.dash; p.ghostT = 0;
   p.shielding = false; p.atkStep = 0;
   FX.dust(p.x, p.y, 5, -p.facing);
-  FX.kick(0.8, p.facing * 0.3);
+  Feel.kick(0.8, p.facing * 0.3);
   SFX.play('dash');
 }
 
-function snapshot() {                                                  // frozen copy of the visual state (afterimages)
+export function snapshot() {                                                  // frozen copy of the visual state (afterimages)
   const p = player;
   return { x: p.x, y: p.y, facing: p.facing, anim: p.anim, t: p.t, run: p.run, chip: p.chip, atkStep: p.atkStep, atkU: p.atkU,
     shieldAmt: p.shieldAmt, parryT: 0, blockFlash: 0, recoil: p.recoil, muzzle: 0, xf: 1, rot: p.rot, warpU: p.warpU, scarf: p.scarf.slice(),
@@ -138,8 +103,8 @@ function snapshot() {                                                  // frozen
 }
 
 /* ------------------------------------------------------------------ aiming (cannon, keyboard / gamepad) */
-function shoulderWorld() { poseOf(player); return { x: player.x + player.facing * Q.sx / PPU, y: player.y + Q.sy / PPU }; }
-function updateAim(dt) {
+export function shoulderWorld() { poseOf(player); return { x: player.x + player.facing * Q.sx / PPU, y: player.y + Q.sy / PPU }; }
+export function updateAim(dt) {
   const p = player, sh = shoulderWorld();
   let ang = 0;
   p.aimTarget = null;
@@ -167,7 +132,7 @@ function updateAim(dt) {
   p.aim += (ang - p.aim) * Math.min(1, dt * 28);
 }
 
-function startSwing() {
+export function startSwing() {
   const p = player;
   const step = p.comboWin > 0 ? (p.comboStep % 3) + 1 : 1, S = SWING[step - 1];
   p.comboStep = step; p.atkStep = step; p.atkT = 0; p.atkU = 0; p.atkDur = S.dur; p.atkFx = false; p.atkHits.length = 0;
@@ -175,7 +140,7 @@ function startSwing() {
   p.vx += p.facing * S.lunge;                                          // forward step-in, movement stays free
   SFX.play('slash', step);
 }
-function updateSwing(dt) {
+export function updateSwing(dt) {
   const p = player;
   if (!p.atkStep) return;
   p.atkT += dt; p.atkU = clamp(p.atkT / p.atkDur, 0, 1);
@@ -194,11 +159,11 @@ function updateSwing(dt) {
   }
 }
 
-function muzzleWorld() {
+export function muzzleWorld() {
   const p = player, sh = shoulderWorld(), c = Math.cos(p.aim), s = Math.sin(p.aim), L = 27 / PPU;
   return { x: sh.x + p.facing * c * L, y: sh.y + s * L, dx: p.facing * c, dy: s };
 }
-function fireCannon() {
+export function fireCannon() {
   const p = player, f = p.facing;
   if (p.aimTarget) {                                                     // snap the shot onto the locked target
     const sh = shoulderWorld(), e = p.aimTarget;
@@ -208,28 +173,28 @@ function fireCannon() {
   p.cd.cannon = 0.30; p.cdMax.cannon = 0.30; p.muzzle = 0.1; p.recoil = 1;
   bullets.push({ x: m.x, y: m.y, vx: m.dx * 31, vy: m.dy * 31, life: 1.2, dmg: 1, trail: 0 });
   p.vx -= m.dx * 2.5;
-  FX.kick(1.4, -f * 0.5);
+  Feel.kick(1.4, -f * 0.5);
   for (let i = 0; i < 6; i++) FX.spark(m.x, m.y, Math.atan2(m.dy, m.dx) + rnd(-0.5, 0.5), rnd(6, 12), rnd(0.08, 0.16), i % 2 ? '#ffe078' : '#ffffff', { g: 6 });
   FX.disc(m.x, m.y, 4, 0.06, '#ffffff');
   FX.add(PT.CHIP, p.x + f * 0.3, p.y + 1.2, -f * rnd(1, 3), rnd(3, 5), 0.4, '#ffc43d', { g: 24, sz: 1 });
   SFX.play('shoot');
 }
 
-const CHARGE_MIN = 0.35, CHARGE_FULL = 0.85;
-function fireCharged(k) {                                              // hold J: piercing plasma lance
+export const CHARGE_MIN = 0.35, CHARGE_FULL = 0.85;
+export function fireCharged(k) {                                              // hold J: piercing plasma lance
   const p = player, f = p.facing;
   if (p.aimTarget) { const sh = shoulderWorld(), e = p.aimTarget; p.aim = clamp(Math.atan2(e.y + e.h * 0.55 - sh.y, Math.abs(e.x - sh.x)), -85 * DEG, 85 * DEG); }
   const m = muzzleWorld();
   p.cd.cannon = 0.45; p.cdMax.cannon = 0.45; p.muzzle = 0.16; p.recoil = 1;
   bullets.push({ x: m.x, y: m.y, vx: m.dx * 27, vy: m.dy * 27, life: 1.3, dmg: Math.round(2 + 2 * k), trail: 0, big: true, pierce: true, hits: [] });
   p.vx -= m.dx * (5 + 5 * k);
-  FX.kick(2.5 + 2 * k, -f); FX.screenFlash(0.12 * k, '#fff3b8');
+  Feel.kick(2.5 + 2 * k, -f); Feel.screenFlash(0.12 * k, '#fff3b8');
   FX.ring(m.x, m.y, 3, 16 + 10 * k, 0.2, '#ffc43d'); FX.disc(m.x, m.y, 6 + 4 * k, 0.08, '#ffffff');
   for (let i = 0; i < 10; i++) FX.spark(m.x, m.y, Math.atan2(m.dy, m.dx) + rnd(-0.7, 0.7), rnd(8, 16), rnd(0.1, 0.22), i % 2 ? '#ffc43d' : '#ffffff', { g: 6 });
   SFX.play('kill');
 }
 
-function doBlink() {
+export function doBlink() {
   const p = player, old = p.x, f = p.facing;
   const next = Math.min(139, Math.max(1, old + f * 5.3));
   p.cd.blink = 1.6; p.cdMax.blink = 1.6;
@@ -244,13 +209,13 @@ function doBlink() {
   FX.burst(next, p.y + 1.1, 16, A.m, 11);
   p.x = next; p.vy = Math.max(p.vy, 1.6); p.inv = Math.max(p.inv, 0.22); p.warpU = 1;
   p.atkStep = 0;
-  FX.kick(2.4, f * 0.6);
+  Feel.kick(2.4, f * 0.6);
   SFX.play('blink');
   blinkHit(old, next);
 }
 
 /* ------------------------------------------------------------------ per-frame update */
-function updatePlayer(dt) {
+export function updatePlayer(dt) {
   const p = player;
   p.t += dt;
   p.inv = Math.max(0, p.inv - dt); p.dashCd = Math.max(0, p.dashCd - dt);
@@ -352,7 +317,7 @@ function updatePlayer(dt) {
   finishFrame(dt);
 }
 
-function finishFrame(dt) {
+export function finishFrame(dt) {
   const p = player;
   /* animation state */
   let a = 'idle';
@@ -367,7 +332,7 @@ function finishFrame(dt) {
   p.px = p.x; p.py = p.y;
 }
 
-function updateScarf(dt) {
+export function updateScarf(dt) {
   const p = player, sc = p.scarf;
   poseOf(p);
   const dx = (p.x - p.px) * PPU, dy = -(p.y - p.py) * PPU;
@@ -384,7 +349,7 @@ function updateScarf(dt) {
   }
 }
 
-function updateDeath(dt) {
+export function updateDeath(dt) {
   const p = player;
   p.deadT += dt; p.vx *= Math.exp(-dt * 6);
   p.x = clamp(p.x + p.vx * dt, 0.5, WORLD_W - 2);
@@ -395,12 +360,12 @@ function updateDeath(dt) {
     p.burst = true;
     FX.debris(p.x, p.y + 0.6, 14, [ACCENT.blade.m, '#ff3d9d', '#16203d', '#ffffff'], 8);
     FX.ring(p.x, p.y + 0.8, 3, 34, 0.35, '#ff3d9d'); FX.disc(p.x, p.y + 0.8, 10, 0.14, '#ffffff');
-    FX.kick(5); SFX.play('die');
+    Feel.kick(5); SFX.play('die');
   }
   if (p.deadT > 1.15) respawn();
 }
 
-function respawn() {
+export function respawn() {
   const p = player;
   p.dead = false; p.burst = false; p.deadT = 0; p.rot = 0;
   p.hp = p.maxhp; p.x = p.checkpoint + 2; p.y = 1; p.vx = 0; p.vy = 3; p.inv = 2.2; p.hurtT = 0;
@@ -415,17 +380,17 @@ function respawn() {
   Game.snapCamera();
 }
 
-function pitFall() {
+export function pitFall() {
   const p = player;
   if (p.dead) return;
   const lost = p.inv <= 0;
-  if (lost) { p.hp -= 1; HUD.setHealth(p.hp, p.maxhp, true); FX.screenFlash(0.35, '#ff3d6d'); SFX.play('hurt'); }
+  if (lost) { p.hp -= 1; HUD.setHealth(p.hp, p.maxhp, true); Feel.screenFlash(0.35, '#ff3d6d'); SFX.play('hurt'); }
   if (p.hp <= 0) { p.hp = 0; killPlayer(); p.x = p.checkpoint + 2; p.y = 2; p.vy = 0; return; }
   p.x = p.checkpoint + 2; p.y = 4; p.vx = 0; p.vy = 0; p.inv = 1.5;
   Game.snapCamera();
 }
 
-function checkWorldTriggers() {
+export function checkWorldTriggers() {
   const p = player;
   for (const cp of CHECKPOINTS) {
     if (p.x >= cp + 1 && cp > p.checkpoint) {

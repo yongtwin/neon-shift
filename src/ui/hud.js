@@ -1,9 +1,13 @@
-'use strict';
+import { ACCENT, makeChipIcon } from '../art/art.js';
+import { CHIP_INFO, CHIP_ORDER } from '../chips/chips.js';
+import { lastInputLabel } from '../core/input.js';
+import { $ } from '../core/util.js';
+
 /* =====================================================================
    DOM HUD. The chip bar and health pips are built ONCE and only touched
    when a value actually changes (v0.3 rebuilt them on every hit).
    ===================================================================== */
-const HUD = {
+export const HUD = {
   chips: {}, pips: [], last: {}, toastT: 0, debugOn: false, hintT: 14,
 
   init() {
