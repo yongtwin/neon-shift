@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NEON//SHIFT — Cyber Chip Runner</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="game" tabindex="0" aria-label="NEON SHIFT playable game area">
+  <canvas id="screen"></canvas>
+  <div id="crt"></div>
+
+  <div id="hud">
+    <div class="hud-left">
+      <div class="brand"><span>NEON</span><i>//</i><span>SHIFT</span></div>
+      <div class="vitals"><div class="tiny">INTEGRITY</div><div class="health" id="health"></div></div>
+      <div id="chipbar"></div>
+    </div>
+    <div class="hud-right">
+      <div class="stat"><span>HOSTILES</span><b id="killcount">0 / 10</b></div>
+      <div class="stat"><span>DISTANCE</span><b id="progress">0%</b></div>
+      <div class="stat"><span>CHIPS</span><b id="unlocks">1 / 4</b></div>
+    </div>
+  </div>
+
+  <div id="combo"><b id="combo-n">0</b><span>HIT CHAIN</span><i id="combo-bar"></i></div>
+  <div id="toast"></div>
+  <div id="hint">A / D MOVE &nbsp;·&nbsp; W / SPACE JUMP ×2 &nbsp;·&nbsp; SHIFT DASH &nbsp;·&nbsp; J / CLICK ATTACK &nbsp;·&nbsp; 1–4 / Q E SWAP CHIP &nbsp;·&nbsp; R RESTART</div>
+
+  <div id="debug" hidden>
+    <div>RENDERER <span id="d-render">CANVAS PIXEL</span> &nbsp; FPS <span id="d-fps">0</span></div>
+    <div>POS <span id="d-pos">0</span> &nbsp; VEL <span id="d-vel">0</span> &nbsp; FRAMES <span id="d-frames">0</span></div>
+    <div>HITSTOP <span id="d-hs">0</span> &nbsp; FX <span id="d-fx">0</span> &nbsp; INPUT <span id="d-input">-</span></div>
+    <div class="dim">F3 debug · F4 hitboxes · M mute · P pause</div>
+  </div>
+
+  <div id="touch">
+    <div class="pad left"><button class="touch" data-control="left">◀</button><button class="touch" data-control="right">▶</button></div>
+    <div class="pad right"><button class="touch" data-control="jump">JUMP</button><button class="touch" data-control="dash">DASH</button><button class="touch attack" data-control="attack">ATK</button></div>
+  </div>
+
+  <div id="overlay">
+    <div class="panel">
+      <div class="eyebrow" id="ov-eyebrow">◉ EXPERIMENTAL COMBAT BUILD · v0.4</div>
+      <div class="title-row">
+        <div class="title-text">
+          <h1 id="ov-title">NEON<span>//</span>SHIFT</h1>
+          <div class="lead" id="ov-lead">RUN FAST. REWRITE YOUR BODY. NEVER DRAW A BAD HAND.</div>
+        </div>
+        <canvas id="hero" width="72" height="84"></canvas>
+      </div>
+      <div class="desc" id="ov-desc">
+        Collect permanent combat chips and rewrite your cybernetic body <span class="hl">mid-fight</span>.
+        Start with <span class="hl">BLADE</span> — find <span class="hl">CANNON, SHIELD and BLINK</span> in the city,
+        then reach the extraction portal on the far right.
+      </div>
+      <div class="controls" id="ov-controls">
+        <div><kbd>A</kbd><kbd>D</kbd> move</div>
+        <div><kbd>W</kbd><kbd>SPACE</kbd> jump (×2)</div>
+        <div><kbd>SHIFT</kbd> dash</div>
+        <div><kbd>J</kbd> / click attack · hold for shield</div>
+        <div><kbd>1</kbd>–<kbd>4</kbd> <kbd>Q</kbd><kbd>E</kbd> swap chip</div>
+        <div>tap shield just before a hit = <b class="hl">PARRY</b></div>
+      </div>
+      <button id="start" class="btn">▶ START RUN</button><button id="clear" class="btn secondary" title="Erase permanent chip unlocks">RESET CHIPS</button>
+      <div class="footer-note" id="save-note">Your chip collection saves automatically in this browser. No account or server required.</div>
+    </div>
+  </div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/art.js"></script>
+<script src="js/world.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/player.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
