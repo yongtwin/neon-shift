@@ -1,6 +1,7 @@
 import { SFX } from './audio.js';
 import { Game } from './game.js';
 import { HUD } from '../ui/hud.js';
+import { Screens } from '../ui/screens.js';
 
 /* =====================================================================
    Input: KEYBOARD + GAMEPAD (+ touch buttons). No mouse.
@@ -61,10 +62,12 @@ const live = () => Game.running && !Game.paused;
 window.addEventListener('keydown', e => {
   const k = keyName(e);
   lastInputLabel = k.replace('Key', '').replace('Arrow', '→');
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(k)) e.preventDefault();
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Tab'].includes(k)) e.preventDefault();
   const first = !keys[k] && !e.repeat;
   keys[k] = true;
   if (!first) return;
+  if (Screens.isOpen()) { if (Screens.onKey(k)) { keys[k] = false; return; } }   // menus own the keyboard while open
+  if ((k === 'Tab' || k === 'KeyC') && Game.running) { Game.toggleChips(); return; }
   if (k === 'KeyP' || k === 'Escape') { Game.togglePause(); return; }
   if (k === 'KeyM') { HUD.toast(SFX.toggleMute() ? 'SOUND OFF' : 'SOUND ON', '#8ea3c4'); return; }
   if (k === 'KeyN') { HUD.toast(SFX.toggleMusic() ? 'MUSIC ON' : 'MUSIC OFF', '#8ea3c4', 1); return; }

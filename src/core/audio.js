@@ -185,5 +185,5 @@ export const SFX = (() => {
     voice('square', note, t, STEP * 0.8, intro ? 0.02 + 0.02 * build : 0.035, M.lp);
   }
 
-  return { init, play, duck, toggleMute, startMusic, stopMusic, toggleMusic, get muted() { return muted; }, get lastDuck() { return lastDuck; } };
+  return { init, play, duck, toggleMute, startMusic, stopMusic, toggleMusic, get muted() { return muted; }, get musicOn() { return !music || music.on; }, get lastDuck() { return lastDuck; } };
 })();

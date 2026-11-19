@@ -13,6 +13,12 @@ import { ENEMY_DEF, spawnEnemies, totalEnemies } from './enemies/enemies.js';
 import { ANCHOR, BLINK, CANNON, CHARGE_FULL, CHARGE_MIN, GUARD, MOVE, PARRY_WINDOW, PERFECT_WINDOW, SWING, player, resetPlayer } from './player/player.js';
 import { buildArt, resizeView } from './render/render.js';
 import { HUD } from './ui/hud.js';
+import { Screens } from './ui/screens.js';
+import { STAGES } from './levels/stages.js';
+import { HAZARDS } from './levels/stage1.js';
+import { validateStage } from './levels/validate.js';
+import { laserTimeToOn } from './levels/world.js';
+import { BOSS } from './enemies/enemies.js';
 
 /* =====================================================================
    NEON//SHIFT entry point (Vite ES module). Wires DOM + canvases, builds the
@@ -33,7 +39,8 @@ function boot() {
   resetPlayer(); spawnEnemies(); HUD.setKills(0, totalEnemies());
   bindPointer(S.gameEl); bindTouchButtons();
   window.addEventListener('resize', resizeView);
-  $('start').addEventListener('click', () => Game.restart());
+  Screens.init(S.gameEl, Game); Screens.refreshTitle();
+  $('start').addEventListener('click', () => Game.newRun(0));
   $('clear').addEventListener('click', () => {
     player.unlocked = new Set(['blade']); Save.setChips(player.unlocked); syncSlots();
     HUD.setUnlocked(player.unlocked); HUD.setActive('blade', false);
@@ -56,10 +63,17 @@ window.NS = {
   pad,                                                    // gamepad-owned input state (cleared on disconnect)
   unlockAll() { for (const c of CHIP_ORDER) player.unlocked.add(c); Save.setChips(player.unlocked); syncSlots(); HUD.setUnlocked(player.unlocked); },
   tp(x, y = 0) { player.x = x; player.y = y; player.vx = 0; player.vy = 0; player.prevX = x; player.prevY = y; player.px = x; player.py = y; Game.snapCamera(); },
-  loadStage(i = 0) { return Game.loadStage(i); },         // stub: stage 0 only for now (returns false otherwise)
+  loadStage(i = 0, fresh = false) { return fresh ? Game.newRun(i) : Game.loadStage(i); },   // 0..2; false for an unknown stage
+  stageClear(immediate = true) { return Game.stageClear(immediate); },                     // finish the current stage now (tests)
+  get boss() { return Game.boss; },
+  get stage() { return { index: Game.stage, ...STAGES[Game.stage], hazards: HAZARDS, t: Game.stageT }; },
+  STAGES,
+  validateStage,                                                                           // reachability vs jump physics
+  laserTimeToOn: h => laserTimeToOn(h, Game.stageT),
+  get screens() { return Screens.open; },
   get feel() { return Feel; },                            // hitstop / shake / shakeX / slowT / log
   get save() { return Save; },                            // data, load(), reset(), wipe(), useMemory(), source
-  consts: { MOVE, SWING, GUARD, PARRY_WINDOW, PERFECT_WINDOW, CHARGE_MIN, CHARGE_FULL, CANNON, BLINK, ANCHOR, ENEMY_DEF, FLINCH_MAX, HYPER_ARMOR, CHIPS, SLOTS },
+  consts: { BOSS, MOVE, SWING, GUARD, PARRY_WINDOW, PERFECT_WINDOW, CHARGE_MIN, CHARGE_FULL, CANNON, BLINK, ANCHOR, ENEMY_DEF, FLINCH_MAX, HYPER_ARMOR, CHIPS, SLOTS },
   totalEnemies,
 };
 

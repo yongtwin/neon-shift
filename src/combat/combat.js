@@ -5,7 +5,7 @@ import { Game } from '../core/game.js';
 import { bullets, enemies, enemyBullets } from '../core/state.js';
 import { filterInPlace, rnd } from '../core/util.js';
 import { FX, PT } from '../effects/fx.js';
-import { setState, totalEnemies } from '../enemies/enemies.js';
+import { BOSS, ENEMY_DEF, setState, startBossDeath, totalEnemies } from '../enemies/enemies.js';
 import { streetTop } from '../levels/world.js';
 import { BOSS_KILL_HITSTOP, GUARD, KILL_HITSTOP, PARRY_HOLD_AFTER, PARRY_WINDOW, PERFECT_WINDOW, cancelSwing, player } from '../player/player.js';
 import { HUD } from '../ui/hud.js';
@@ -29,9 +29,22 @@ export function hurtbox(e, out = _hb) { out.x0 = e.x - e.hw; out.x1 = e.x + e.hw
 export const isArmored = e => e.armor || e.armorT > 0 || e.state === 'stagger' || (e.kind === 'enforcer' && e.state === 'windup' && e.tele > 0.6);
 
 /* ------------------------------------------------------------------ damage to enemies */
-/* o: { dirX, kb, kvy, stun, hs, shake, power, x, y, c1, c2 } */
+/* o: { src:'blade'|'blink'|'bullet'|'lance'|'reflect', dirX, kb, kvy, stun, hs, shake, power, x, y, c1, c2 } */
+let clankT = 0;
 export function damageEnemy(e, dmg, o) {
-  if (!e.alive) return false;
+  if (!e.alive || e.dying) return false;
+  if (ENEMY_DEF[e.kind].bladeProof && (o.src === 'blade' || o.src === 'blink')) {   // turrets: armour plate, use the cannon / a reflect
+    FX.hitSparks(o.x, o.y, -o.dirX, 0, '#c8cbd8', '#ffffff'); Feel.stop(0.03); Feel.kick(1.2, o.dirX); SFX.play('block');
+    if (Game.time - clankT > 1.2) { clankT = Game.time; FX.text('ARMORED', e.x, e.y + e.h + 0.8, '#c8cbd8', 0.8); }
+    e.flash = 0.05;
+    return false;
+  }
+  if (e.kind === 'warden') {                                            // boss: armoured front, exposed after a crash / slam / parry
+    const back = o.dirX === e.facing && (o.src === 'blade' || o.src === 'blink');
+    const mul = e.exposed > 0 || e.state === 'stagger' ? BOSS.exposedMul : back || o.src !== 'blade' ? 1 : BOSS.armoredMul;
+    dmg = dmg * mul;                                                    // fractional on the boss (bar is continuous)
+    if (mul < 1 && Game.time - clankT > 1.5) { clankT = Game.time; FX.text('ARMOR', e.x, e.y + e.h + 0.8, '#c8cbd8', 0.7); }
+  }
   if (e.state === 'stagger') dmg += 1;                                  // parried enemies are wide open
   e.hp -= dmg;
   e.flash = o.power >= 3 ? 0.16 : 0.12;
@@ -50,13 +63,13 @@ export function damageEnemy(e, dmg, o) {
   if (o.power >= 2) for (let i = 0; i < 3; i++) FX.puff(o.x, o.y, o.dirX * rnd(1, 4), rnd(0, 2), 0.25, '#b9c8ee', 2);
   Feel.stop(o.hs); Feel.kick(o.shake, o.dirX);
   SFX.play('hit', o.power);
-  if (e.hp <= 0) { killEnemy(e, o); return true; }
+  if (e.hp <= 0) { if (e.kind === 'warden') startBossDeath(e); else killEnemy(e, o); return true; }
   return false;
 }
 
 export function killEnemy(e, o) {
   e.alive = false; Game.kills++;
-  HUD.setKills(Game.kills, totalEnemies());
+  HUD.setKills(Game.stageKills, totalEnemies());
   const big = e.kind === 'warden', cy = e.y + e.h * 0.5;
   FX.debris(e.x, cy, big ? 24 : 13, [EN.g2, EN.g3, EN.r1, EN.r2, big ? EN.am : EN.g1], big ? 11 : 9);
   FX.disc(e.x, cy, big ? 22 : 14, 0.18, '#ffffff');
@@ -66,7 +79,7 @@ export function killEnemy(e, o) {
   Feel.stop(Math.max(o.hs || 0, big ? BOSS_KILL_HITSTOP : KILL_HITSTOP)); Feel.kick(Math.max(o.shake || 0, 3) + (big ? 3 : 1.5), o.dirX);
   Feel.screenFlash(big ? 0.4 : 0.18, '#ffe6c8');
   SFX.play('kill');
-  if (Game.kills >= totalEnemies()) HUD.toast('ALL HOSTILES DOWN — REACH THE PORTAL', '#ffe06b', 2.2);
+  if (Game.stageKills >= totalEnemies()) HUD.toast('ALL HOSTILES DOWN — REACH THE PORTAL', '#ffe06b', 2.2);
 }
 
 /* ------------------------------------------------------------------ blade / blink */
@@ -77,13 +90,13 @@ export function bladeHitCheck(S, step) {
   if (Game.showBoxes) { dbgBoxes.push({ x0, x1, y0, y1, t: 0.1 }); if (dbgBoxes.length > 12) dbgBoxes.shift(); }
   const A = ACCENT.blade;
   for (const e of enemies) {
-    if (!e.alive || p.atkHits.includes(e.id)) continue;
+    if (!e.alive || e.dying || p.atkHits.includes(e.id)) continue;
     const h = hurtbox(e);
     if (h.x1 > x0 && h.x0 < x1 && h.y1 > y0 && h.y0 < y1) {
       p.atkHits.push(e.id);
       const ix = e.x - f * e.hw * 0.6, iy = e.y + e.h * 0.55, crit = p.critT > 0;
       if (crit) { p.critT = 0; FX.text('CRITICAL!', e.x, e.y + e.h + 0.9, '#ffe06b', 0.8); Feel.screenFlash(0.18, '#fff3b8'); }
-      damageEnemy(e, S.dmg + (crit ? 3 : 0), { dirX: f, kb: S.kb * (crit ? 1.5 : 1), kvy: crit ? Math.max(S.kvy, 4) : S.kvy, stun: S.stun + (crit ? 0.15 : 0),
+      damageEnemy(e, S.dmg + (crit ? 3 : 0), { src: 'blade', dirX: f, kb: S.kb * (crit ? 1.5 : 1), kvy: crit ? Math.max(S.kvy, 4) : S.kvy, stun: S.stun + (crit ? 0.15 : 0),
         hs: S.hs + (crit ? 0.04 : 0), shake: S.shake + (crit ? 2 : 0), power: crit ? 3 : S.power, x: ix, y: iy, c1: crit ? '#ffe06b' : A.m, c2: A.l });
       if (step === 3) Feel.screenFlash(0.1, '#ffffff');
     }
@@ -104,9 +117,9 @@ export function reflectBullet(b, dmg, A) {
 export function blinkHit(a, b) {
   const p = player, f = Math.sign(b - a) || p.facing, lo = Math.min(a, b) - 1, hi = Math.max(a, b) + 1, A = ACCENT.blink;
   for (const e of enemies) {
-    if (!e.alive) continue;
-    if (e.x > lo && e.x < hi && Math.abs(e.y - p.y) < 2.4)
-      damageEnemy(e, 3, { dirX: f, kb: 14, kvy: 3, stun: 0.35, hs: 0.08, shake: 3.5, power: 2, x: e.x, y: e.y + e.h * 0.55, c1: A.m, c2: A.l });
+    if (!e.alive || e.dying) continue;
+    if (e.x > lo && e.x < hi && e.y < p.y + 2.4 && e.y + e.h > p.y - 0.4)
+      damageEnemy(e, 3, { src: 'blink', dirX: f, kb: 14, kvy: 3, stun: 0.35, hs: 0.08, shake: 3.5, power: 2, x: e.x, y: e.y + e.h * 0.55, c1: A.m, c2: A.l });
   }
 }
 
@@ -123,7 +136,7 @@ export function defendCheck(srcX) {
 export function hurtPlayer(dmg, srcX, o = {}) {
   const p = player;
   if (p.dead) return 'ignored';
-  const def = defendCheck(srcX);
+  const def = o.hazard ? null : defendCheck(srcX);                     // the shield does not stop lasers / spikes
   if (def && o.contact) {                                               // body contact into a raised shield: knock apart
     if (def === 'parry') { doParry(o); return 'parry'; }
     if (p.blockFlash <= 0) doBlock(o, GUARD.costContact);
@@ -149,6 +162,7 @@ export function hurtPlayer(dmg, srcX, o = {}) {
 
 export function killPlayer(k = -player.facing) {
   const p = player;
+  if (!p.dead) Game.onPlayerDeath();
   p.hp = 0; p.dead = true; p.deadT = 0; p.burst = false; p.inv = 99; p.dash = 0; p.shielding = false; p.charging = false;
   cancelSwing();
   p.vx = k * 3; p.vy = 6; p.flash = 0.2;
@@ -223,18 +237,18 @@ export function updateBullets(dt) {
     if (b.life > 0 && bulletBlocked(b)) { b.life = 0; FX.hitSparks(b.x, Math.max(b.y, 0.1), -Math.sign(b.vx) || 1, 0, A.m, '#ffffff'); FX.disc(b.x, Math.max(b.y, 0.1), 4, 0.06, '#ffffff'); continue; }
     if (b.trail <= 0) { const sp = Math.hypot(b.vx, b.vy || 0) || 1; b.trail = 0.018; FX.add(PT.CHIP, b.x - b.vx / sp * 0.5, b.y - (b.vy || 0) / sp * 0.5, 0, 0, 0.14, b.reflected ? '#ece4ff' : '#ffb347', { sz: 1 }); }
     for (const e of enemies) {
-      if (!e.alive || b.life <= 0 || (b.hits && b.hits.includes(e.id))) continue;
+      if (!e.alive || e.dying || b.life <= 0 || (b.hits && b.hits.includes(e.id))) continue;
       const h = hurtbox(e), pad = b.big ? 0.5 : 0.3;
       if (b.x > h.x0 - pad && b.x < h.x1 + pad && b.y > h.y0 - pad && b.y < h.y1 + pad) {
         const dir = Math.sign(b.vx) || 1;
         if (b.pierce) {                                                  // charged lance: passes through, hits each enemy once
           b.hits.push(e.id);
-          damageEnemy(e, b.dmg, { dirX: dir, kb: 14, kvy: 2, stun: 0.4, hs: 0.08, shake: 4, power: 3, x: b.x, y: b.y, c1: A.m, c2: '#ffffff' });
+          damageEnemy(e, b.dmg, { src: 'lance', dirX: dir, kb: 14, kvy: 2, stun: 0.4, hs: 0.08, shake: 4, power: 3, x: b.x, y: b.y, c1: A.m, c2: '#ffffff' });
           FX.ring(b.x, b.y, 3, 20, 0.18, '#ffffff'); SFX.play('bolt');
           continue;
         }
         const c1 = b.reflected ? '#ffffff' : A.m, c2 = b.reflected ? ACCENT.blade.l : A.l;
-        damageEnemy(e, b.dmg, { dirX: dir, kb: b.reflected ? 10 : 5, stun: b.reflected ? 0.3 : 0.15, hs: b.reflected ? 0.07 : 0.03, shake: b.reflected ? 3 : 1.5, power: b.reflected ? 2 : 1, x: b.x, y: b.y, c1, c2 });
+        damageEnemy(e, b.dmg, { src: b.reflected ? 'reflect' : 'bullet', dirX: dir, kb: b.reflected ? 10 : 5, stun: b.reflected ? 0.3 : 0.15, hs: b.reflected ? 0.07 : 0.03, shake: b.reflected ? 3 : 1.5, power: b.reflected ? 2 : 1, x: b.x, y: b.y, c1, c2 });
         FX.ring(b.x, b.y, 2, 12, 0.14, c2);
         b.life = 0; SFX.play('bolt');
       }

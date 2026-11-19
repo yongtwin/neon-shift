@@ -7,20 +7,31 @@ import { Save } from './save.js';
 import { S, bullets, enemies, enemyBullets } from './state.js';
 import { $, PPU, clamp, rnd } from './util.js';
 import { FX } from '../effects/fx.js';
-import { resetArenas, spawnEnemies, totalEnemies, updateArenas, updateEnemies } from '../enemies/enemies.js';
-import { DECOR, EXIT_X, WORLD_W } from '../levels/stage1.js';
+import { bossEnemy, resetArenas, spawnEnemies, totalEnemies, updateArenas, updateEnemies } from '../enemies/enemies.js';
+import { DECOR, EXIT_X, WORLD_W, applyStage } from '../levels/stage1.js';
+import { STAGES } from '../levels/stages.js';
+import { updateHazards } from '../levels/world.js';
 import { checkWorldTriggers, player, resetPlayer, updatePlayer } from '../player/player.js';
-import { drawHero, drawViewer, renderFrame, view } from '../render/render.js';
+import { drawHero, drawViewer, onStageLoad, renderFrame, view } from '../render/render.js';
 import { HUD } from '../ui/hud.js';
+import { Screens } from '../ui/screens.js';
 
 /* =====================================================================
-   Game loop + glue. Fixed-order update:
-     input → player → world triggers → enemies → projectiles → fx → camera
+   Game loop + flow. Fixed-order tick:
+     player → world triggers → hazards → enemies → arenas → projectiles → fx → camera
    Hit-stop freezes everything except screen shake / HUD, then resumes.
+
+   Flow: title → newRun(i) → loadStage(i) [intro card] → reach the exit portal →
+   stageClear (1.6 s card) → next stage … → stage 3 boss death sequence →
+   victory screen. Death → respawn at the last checkpoint, full HP (deaths are
+   counted, no game over). Pause (Esc / P) and the chip screen (Tab / C) both
+   pause the simulation. The highest stage reached persists (title CONTINUE).
    ===================================================================== */
 export const Game = {
   running: false, paused: false, freeze: false, time: 0, runTime: 0, frames: 0, fps: 60,
   kills: 0, combo: 0, comboT: 0, bestCombo: 0, showBoxes: false, lead: 0, viewer: null, simError: null,
+  arena: null, stage: 0, alpha: 0, ticks: 0, stageT: 0, deaths: 0, stageDeaths: 0, stageKills0: 0, stageTime0: 0,
+  transitionT: 0, bossT: 0, victoryShown: false, menu: null,
 
   focus() { try { S.gameEl.focus({ preventScroll: true }); } catch { S.gameEl.focus(); } },
   selectChip(id) { if (id && this.running && !this.paused) switchChip(id); },
@@ -28,41 +39,94 @@ export const Game = {
   swapWeapon() { if (this.running && !this.paused) swapWeapon(); },
   addCombo() { this.combo++; this.comboT = 2.2; if (this.combo > this.bestCombo) this.bestCombo = this.combo; },
   resetCombo() { this.combo = 0; this.comboT = 0; },
+  get totalEnemies() { return this.stageKills0 + totalEnemies(); },   // run kills needed for "all down" in this stage (renderer compares Game.kills to it)
+  get stageKills() { return this.kills - this.stageKills0; },
+  get boss() { return bossEnemy(); },
+  stageName() { const st = STAGES[this.stage]; return st ? `STAGE ${this.stage + 1} · ${st.name}` : ''; },
 
-  restart() {
+  /** start a fresh run (title START, PLAY AGAIN, CONTINUE) */
+  newRun(i = 0) {
+    this.kills = 0; this.bestCombo = 0; this.runTime = 0; this.deaths = 0; this.victoryShown = false;
+    return this.loadStage(i);
+  },
+  restart() { return this.newRun(0); },                       // legacy name (title START button, R key, tests)
+
+  /** load stage i keeping run totals (kills, time, chips) */
+  loadStage(i) {
+    if (!STAGES[i]) return false;
     SFX.init();
-    clearPressed(); resetClock();                              // drop presses made on the title screen / pause
+    applyStage(i); this.stage = i;
+    try { onStageLoad(S.stage); } catch (err) { console.error('NEON//SHIFT stage art error:', err); }
+    Save.reachStage(i);
+    clearPressed(); resetClock(); Screens.hideAll();
     resetPlayer(); spawnEnemies();
     bullets.length = 0; enemyBullets.length = 0; FX.reset();
-    this.kills = 0; this.combo = 0; this.comboT = 0; this.bestCombo = 0; this.runTime = 0; this.lead = 0; Feel.slowT = 0;
-    resetArenas(); HUD.setBoss(null);
-    HUD.setActive('blade', false); HUD.setUnlocked(player.unlocked); HUD.setHealth(player.hp, player.maxhp, false);
+    this.combo = 0; this.comboT = 0; this.lead = 0; Feel.slowT = 0; this.stageT = 0; this.transitionT = 0; this.bossT = 0;
+    this.stageDeaths = 0; this.stageKills0 = this.kills; this.stageTime0 = this.runTime;
+    resetArenas(); updateHazards(0); HUD.setBoss(null);
+    HUD.setActive(player.chip, false); HUD.setUnlocked(player.unlocked); HUD.setHealth(player.hp, player.maxhp, false);
     HUD.setKills(0, totalEnemies());
     HUD.hideOverlay();
-    this.running = true; this.paused = false;
+    this.running = true; this.paused = false; this.menu = null;
     this.snapCamera();
-    HUD.toast('MISSION START // FIND THE CHIPS', '#2fe6ff');
-    HUD.hint('[J] SLASH ×3 COMBO  ·  [W] JUMP ×2  ·  [SHIFT] DASH — attack out of a dash to cancel it', '#d6fdff', 8);
+    Screens.stageIntro(STAGES[i], i);
+    const hints = [
+      '[J] SLASH ×3 COMBO  ·  [W] JUMP ×2  ·  [SHIFT] DASH — attack out of a dash to cancel it',
+      'hold [L] to guard (3 blocks) · tap [L] as a bolt lands to PARRY it back · lasers: wait for the gap',
+      'turrets shrug off the blade — [Q] cannon or parry their bolts · BLINK [K] through laser gates',
+    ];
+    HUD.hint(hints[i] || hints[0], '#d6fdff', 8);
     SFX.startMusic();
     this.focus();
+    return true;
   },
+  restartStage() { this.kills = this.stageKills0; this.runTime = this.stageTime0; return this.loadStage(this.stage); },
+
+  /** the exit portal was reached (or NS.stageClear()) */
+  stageClear(immediate = false) {
+    if (!this.running || this.transitionT > 0) return false;
+    const st = STAGES[this.stage], last = this.stage >= STAGES.length - 1;
+    Save.reachStage(Math.min(this.stage + 1, STAGES.length - 1));
+    SFX.play('win');
+    if (last) { this.victory(); return true; }
+    if (immediate) return this.loadStage(this.stage + 1);
+    Screens.stageClear(st, this.stage, { stageTime: this.runTime - this.stageTime0, kills: this.kills - this.stageKills0, deaths: this.stageDeaths });
+    this.transitionT = 1.6;
+    return true;
+  },
+  /** called by the boss death sequence */
+  bossDefeated() { HUD.setBoss(null); this.bossT = 2.2; HUD.toast('WARDEN DESTROYED', '#ffe06b', 2); },
+  victory() {
+    if (this.victoryShown) return;
+    this.victoryShown = true; this.running = false; this.paused = false;
+    SFX.stopMusic();
+    Save.recordRun({ time: this.runTime, kills: this.kills, combo: this.bestCombo });
+    HUD.setBoss(null);
+    Screens.showVictory({ time: this.runTime, kills: this.kills, bestCombo: this.bestCombo, chips: player.unlocked.size, deaths: this.deaths, bestTime: Save.data.best.time });
+  },
+  complete() { return this.stageClear(); },                     // legacy name
+  onPlayerDeath() { this.deaths++; this.stageDeaths++; },
+
   togglePause() {
     if (!this.running) return;
-    this.paused = !this.paused;
+    if (this.menu === 'chips') { this.toggleChips(); return; }
+    this.paused = !this.paused; this.menu = this.paused ? 'pause' : null;
     clearPressed();                                                   // nothing pressed during pause fires on resume (R-013)
-    if (this.paused) { HUD.toast('PAUSED', '#8ea3c4', 9999); SFX.stopMusic(); } else { HUD.toast('', '#8ea3c4', 0.01); SFX.startMusic(); }
+    Screens.showPause(this.paused);
+    if (this.paused) SFX.stopMusic(); else { SFX.startMusic(); this.focus(); }
   },
-  complete() {
-    this.running = false;
-    SFX.play('win'); SFX.stopMusic();
-    const t = Math.floor(this.runTime), time = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-    Save.recordRun({ time: this.runTime, kills: this.kills, combo: this.bestCombo }); Save.reachStage(this.stage + 1);
-    HUD.showOverlay('complete', { message: 'EXTRACTION COMPLETE — YOU REWROTE THE SYSTEM', kills: this.kills, total: totalEnemies(), chips: player.unlocked.size, time, bestCombo: this.bestCombo });
+  toggleChips() {
+    if (!this.running) return;
+    clearPressed();
+    if (this.menu === 'chips') { Screens.showChips(false); this.menu = null; this.paused = false; SFX.startMusic(); this.focus(); return; }
+    Screens.showPause(false); Screens.showChips(true); this.menu = 'chips'; this.paused = true; SFX.stopMusic();
+  },
+  quitToTitle() {
+    this.running = false; this.paused = false; this.menu = null; this.transitionT = 0; this.bossT = 0;
+    Screens.hideAll(); SFX.stopMusic(); HUD.setBoss(null);
+    HUD.showOverlay('title'); Screens.refreshTitle();
   },
   snapCamera() { updateCamera(1, true); },
-  arena: null, stage: 0, alpha: 0, ticks: 0,
-  get totalEnemies() { return totalEnemies(); },
-  loadStage(i) { if (i !== 0) return false; this.stage = 0; this.restart(); return true; },   // stub: one stage for now
   get slowT() { return Feel.slowT; }, set slowT(v) { Feel.slowT = v; },   // timer lives in combat/feel.js
   slowmo(t) { Feel.slowmo(t); },
 };
@@ -95,12 +159,13 @@ export function resetClock() { acc = 0; Game.alpha = 0; }
 
 export function tick(dt) {
   Game.ticks++;
-  Game.runTime += dt;
+  Game.runTime += dt; Game.stageT += dt;
   updatePlayer(dt);
   if (!player.dead) {
     checkWorldTriggers();
-    if (player.x >= EXIT_X) { Game.complete(); return; }
+    if (player.x >= EXIT_X && !Game.arena && Game.transitionT <= 0) { Game.stageClear(); return; }
   }
+  updateHazards(Game.stageT);
   updateEnemies(dt);
   updateArenas(dt);
   updateBullets(dt);
@@ -116,7 +181,7 @@ export function tick(dt) {
 
 export function advance(realDt) {
   Game.time += realDt;
-  HUD.update(realDt);
+  HUD.update(realDt); Screens.tick(realDt);
   pollGamepad();
 
   if (!Game.running) {                                                 // title / results: slow cinematic pan
@@ -126,6 +191,12 @@ export function advance(realDt) {
   }
   if (Game.paused) return;
 
+  if (Game.transitionT > 0) {                                          // stage-clear card, then the next stage
+    Game.transitionT -= realDt; Feel.updateScreen(realDt);
+    if (Game.transitionT <= 0) Game.loadStage(Game.stage + 1);
+    return;
+  }
+  if (Game.bossT > 0) { Game.bossT -= realDt; if (Game.bossT <= 0) { Game.stageClear(); return; } }
   Feel.updateScreen(realDt);
   let t = realDt;
   if (Feel.hitstop > 0) {                                              // HIT-STOP: sim frozen, loop keeps running
@@ -154,7 +225,7 @@ function syncHud() {
   HUD.setLive('shield', player.shielding); HUD.setLive('blink', player.warpU > 0);
   const boss = Game.arena && Game.arena.boss ? enemies.find(e => e.kind === 'warden' && e.alive) : null;
   HUD.setBoss(boss);
-  HUD.setProgress(clamp(Math.round(player.x / 139 * 100), 0, 100));
+  HUD.setProgress(clamp(Math.round(player.x / EXIT_X * 100), 0, 100));
 }
 
 let lastT = 0, dbgT = 0;

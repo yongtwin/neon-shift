@@ -1,6 +1,7 @@
 import { ACCENT } from '../art/art.js';
+import { ninjaAnchors } from '../art/ninja.js';
 import { CHIPS, syncSlots, unlockChip } from '../chips/chips.js';
-import { bladeHitCheck, blinkHit, killPlayer } from '../combat/combat.js';
+import { bladeHitCheck, blinkHit, hurtPlayer, killPlayer } from '../combat/combat.js';
 import { Feel } from '../combat/feel.js';
 import { SFX } from '../core/audio.js';
 import { Game } from '../core/game.js';
@@ -8,8 +9,8 @@ import { Aim, inputAimDown, inputAimUp, inputAttackHeld, inputLeft, inputRight, 
 import { bullets, enemies, enemyBullets } from '../core/state.js';
 import { DEG, PPU, TAU, clamp, rnd } from '../core/util.js';
 import { FX, PT } from '../effects/fx.js';
-import { CHECKPOINTS, PICKUPS, PLAT, WORLD_W } from '../levels/stage1.js';
-import { safeLandingX } from '../levels/world.js';
+import { CHECKPOINTS, EXIT_X, HAZARDS, PICKUPS, PLAT, WORLD_W } from '../levels/stage1.js';
+import { LASER_HALF, safeLandingX } from '../levels/world.js';
 import { HUD } from '../ui/hud.js';
 
 /* =====================================================================
@@ -65,9 +66,7 @@ export const CANNON = { speed: 31, life: 1.2, dmg: 1, cd: 0.3, recoil: 2.5, lanc
 export const BLINK = { dist: 5.3, cd: 1.6, inv: 0.22, dmg: 3 };
 
 /* gameplay anchors (world units from the feet, x forward) */
-export const ANCHOR = { shoulder: { x: 0.08, y: 1.3 }, muzzleLen: 1.35, chest: { x: 0.1, y: 1.1 } };
-/* scarf root per anim (art px, x forward, y up) — visual only */
-const SCARF_ROOT = { idle: [-1.3, 35.5], run: [2.3, 34], dash: [8.3, 30.5], jump: [-1.3, 34], fall: [-2.5, 35], hurt: [-4.6, 35], dead: [-6, 34] };
+export const ANCHOR = { shoulder: { x: 0.08, y: 1.68 }, muzzleLen: 1.2, chest: { x: 0.1, y: 1.2 } };   // matches the phase-2 ninja (B)
 
 export const player = {
   x: 3, y: 0, vx: 0, vy: 0, w: 0.7, facing: 1, onGround: true, airJumps: 0, prevX: 3, prevY: 0,
@@ -156,7 +155,7 @@ export function updateAim(dt) {
     p.aimMode = 'auto';
     let best = null, bd = 15;
     for (const e of enemies) {
-      if (!e.alive) continue;
+      if (!e.alive || e.dying) continue;
       const dx = (e.x - p.x) * p.facing, dy = e.y + e.h * 0.55 - sh.y;
       if (dx < 0.4 || Math.abs(dy) > dx * 3) continue;                  // ahead, within ~70 degrees
       const d = Math.hypot(dx, dy);
@@ -253,7 +252,7 @@ export function fireCharged(k) {                                       // hold J
 /* ------------------------------------------------------------------ blink (LEGS) */
 export function blinkTarget() {
   const p = player, f = p.facing;
-  let lo = 1, hi = Math.min(WORLD_W - 2, 139);
+  let lo = 1, hi = Math.min(WORLD_W - 2, EXIT_X);
   const a = Game.arena;
   if (a) { lo = Math.max(lo, a.x0 + 0.4); hi = Math.min(hi, a.x1 - 0.4); }       // laser walls stop the warp
   const want = clamp(p.x + f * BLINK.dist, lo, hi);
@@ -411,8 +410,9 @@ export function updatePlayer(dt) {
   }
 
   /* ---- integrate + platform landing (one-way from above; highest valid platform wins) ---- */
-  const prevY = p.y, wasGround = p.onGround, preVy = p.vy;
+  const prevY = p.y, wasGround = p.onGround, preVy = p.vy, x0 = p.x;
   p.x = clamp(p.x + p.vx * dt, 0.5, WORLD_W - 2);
+  laserWalls(x0);
   p.vy = Math.max(-MOVE.maxFall, p.vy - MOVE.gravity * dt); p.y += p.vy * dt; p.onGround = false;
   let land = -Infinity;
   for (const [x1, x2, py] of PLAT) {
@@ -425,8 +425,35 @@ export function updatePlayer(dt) {
     if (preVy < -7) { FX.dust(p.x, p.y, 6, 0); SFX.play('land'); }
   }
   if (p.y < -8) pitFall();
+  hazardContact();
 
   finishFrame(dt);
+}
+
+/* laser gates are walls (only BLINK, which teleports, gets past); timed beams just hurt */
+function laserWalls(x0) {
+  const p = player;
+  for (const h of HAZARDS) {
+    if (h.type !== 'laser' || !h.solid || p.y >= h.y1 || p.y + 1.7 <= h.y0) continue;
+    const side = x0 < h.x ? -1 : 1;
+    if ((x0 - h.x) * (p.x - h.x) <= 0 || Math.abs(p.x - h.x) < LASER_HALF) {
+      p.x = h.x + side * LASER_HALF; p.vx = side * 6;
+      hurtPlayer(1, h.x, { hazard: true });
+    }
+  }
+}
+function hazardContact() {
+  const p = player;
+  if (p.dead) return;
+  for (const h of HAZARDS) {
+    if (h.type === 'laser' && h.on && !h.solid && Math.abs(p.x - h.x) < LASER_HALF && p.y < h.y1 && p.y + 1.7 > h.y0) {
+      if (hurtPlayer(1, h.x, { hazard: true }) === 'hit') FX.hitSparks(h.x, p.y + 1, p.x >= h.x ? 1 : -1, 1, '#ff3b4a', '#fff0c8');
+    } else if (h.type === 'spikes' && p.onGround && p.y === (h.y || 0) && p.x > h.x0 && p.x < h.x1) {
+      hurtPlayer(1, p.x - p.facing, { hazard: true });
+      p.vy = 10; p.onGround = false; p.coyote = 0;                        // always bounce off, even with i-frames
+      FX.hitSparks(p.x, p.y + 0.1, 1, 0, '#8a8fa3', '#ff3b4a');
+    }
+  }
 }
 
 export function finishFrame(dt) {
@@ -447,8 +474,8 @@ function updateScarf(dt) {                                              // cosme
   const p = player, sc = p.scarf;
   const dx = (p.x - p.px) * PPU, dy = -(p.y - p.py) * PPU;
   for (let i = 1; i < SCARF_N; i++) { sc[i * 2] -= dx; sc[i * 2 + 1] -= dy; }
-  const root = SCARF_ROOT[p.anim] || SCARF_ROOT.idle;
-  sc[0] = p.facing * root[0]; sc[1] = -root[1];
+  const root = ninjaAnchors(p).scarf;                                // cosmetic only: the cloth follows the art's collar
+  sc[0] = p.facing * root.x; sc[1] = -root.y;
   const k = Math.min(1, dt * 15), tm = Game.time, seg = 3.2;
   for (let i = 1; i < SCARF_N; i++) {
     const wob = Math.sin(tm * 9 + i * 0.9) * 0.7 * (i / SCARF_N);

@@ -1,35 +1,49 @@
 import { seeded } from '../core/util.js';
+import { S } from '../core/state.js';
+import { STAGES } from './stages.js';
 
-/* Stage 1 level data. World units: x → right, y → up, y = 0 is street level.
-   Layout, pickups and checkpoints are unchanged from v0.3. */
-export const WORLD_W = 145;
-export const EXIT_X = 139;
-// [x1, x2, y] — y 0 is solid street, the rest are floating catwalks (land from above only)
-export const PLAT = [[0, 21, 0], [23, 40, 0], [42, 62, 0], [64, 81, 0], [83, 103, 0], [105, 122, 0], [124, 145, 0],
-  [9, 17, 3.8], [30, 38, 4.4], [48, 57, 3.9], [70, 78, 4.4], [89, 99, 3.8], [111, 120, 4]];
-export const PICKUPS = [{ x: 19, y: 1.3, id: 'cannon' }, { x: 46, y: 1.3, id: 'shield' }, { x: 86, y: 1.3, id: 'blink' }];
-export const CHECKPOINTS = [0, 42, 83, 124];
-
-// kind per spawn; positions are v0.3's enemy x list
-export const SPAWNS = [
-  { x: 13, kind: 'gunner' }, { x: 27, kind: 'enforcer' }, { x: 34, kind: 'gunner' }, { x: 45, kind: 'gunner' },
-  { x: 54, kind: 'enforcer' }, { x: 69, kind: 'gunner' }, { x: 86, kind: 'enforcer' }, { x: 94, kind: 'gunner' },
-  { x: 111, kind: 'enforcer' }, { x: 131, kind: 'warden' },
-];
-
-/* lockdown arenas: walls rise when you pass `trigger`, drop when every enemy inside is down */
-export const ARENAS = [
-  { id: 'yard', x0: 64.4, x1: 80.6, trigger: 66.5, title: 'AMBUSH — LOCKDOWN', wave: [{ x: 77, kind: 'enforcer' }, { x: 74.5, kind: 'gunner' }] },
-  { id: 'boss', x0: 124.4, x1: 137.6, trigger: 126.5, title: 'WARDEN — LOCKDOWN', wave: [], boss: true },
-];
-
-/* ------------------------------------------------------------ static decor (seeded => identical every run) */
-export const DECOR = [];         // props that stand on the street
+/* =====================================================================
+   CURRENT STAGE VIEW. (File name kept for existing importers.)
+   Every gameplay module reads level data from here; applyStage(i) swaps the
+   contents IN PLACE (arrays mutated, WORLD_W / EXIT_X are live `let`
+   bindings), so `import { PLAT } from './stage1.js'` always sees the stage
+   being played. S.stage = STAGES[i] (the renderer's contract object).
+   ===================================================================== */
+export let STAGE_INDEX = 0;
+export let WORLD_W = 150;
+export let EXIT_X = 145;
+export const PLAT = [];
+export const PICKUPS = [];
+export const CHECKPOINTS = [];
+export const SPAWNS = [];
+export const ARENAS = [];
+export const HAZARDS = [];
+export const DECOR = [];         // props that stand on the street (seeded => identical every run)
 export const FG = [];            // dark foreground silhouettes (parallax > 1)
-(function buildDecor() {
-  const r = seeded(7731);
-  const keep = [...SPAWNS.map(s => s.x), ...PICKUPS.map(p => p.x), ...CHECKPOINTS, EXIT_X];
-  const free = x => keep.every(k => Math.abs(k - x) > 2.4);
+
+const fill = (arr, src, map = v => v) => { arr.length = 0; for (const v of src || []) arr.push(map(v)); };
+
+export function applyStage(i) {
+  const st = STAGES[i];
+  if (!st) return null;
+  STAGE_INDEX = i; WORLD_W = st.worldW; EXIT_X = st.exitX;
+  fill(PLAT, st.plats, p => [p[0], p[1], p[2]]);
+  fill(PICKUPS, st.pickups, p => ({ ...p }));
+  fill(CHECKPOINTS, st.checkpoints);
+  fill(SPAWNS, st.spawns, s => ({ ...s }));
+  fill(ARENAS, st.arenas, a => ({ ...a, wave: a.wave.map(w => ({ ...w })), spawned: false, cleared: false, wallT: 0 }));
+  fill(HAZARDS, st.hazards, h => ({ ...h, on: !!h.solid, warn: 0 }));
+  // the contract object the renderer reads: live arrays (hazard runtime fields are visible to it)
+  S.stage = Object.assign({}, st, { index: i, plats: PLAT, pickups: PICKUPS, checkpoints: CHECKPOINTS, spawns: SPAWNS, arenas: ARENAS, hazards: HAZARDS });
+  buildDecor(st);
+  return S.stage;
+}
+
+function buildDecor(st) {
+  DECOR.length = 0; FG.length = 0;
+  const r = seeded(7731 + (st.id === 'district' ? 0 : st.id.length * 101));
+  const keep = [...SPAWNS.map(s => s.x), ...PICKUPS.map(p => p.x), ...CHECKPOINTS, EXIT_X, ...HAZARDS.map(h => h.x ?? h.x0)];
+  const free = x => keep.every(k => Math.abs(k - x) > 2.4) && !HAZARDS.some(h => h.type === 'spikes' && x > h.x0 - 1 && x < h.x1 + 1);
   for (const [x1, x2, y] of PLAT) {
     if (y !== 0) continue;
     let x = x1 + 2.5 + r() * 3;
@@ -43,4 +57,6 @@ export const FG = [];            // dark foreground silhouettes (parallax > 1)
     }
   }
   for (let x = 8; x < WORLD_W; x += 18 + r() * 14) FG.push({ x, kind: r() < 0.6 ? 'pole' : 'cable', seed: (r() * 1e6) | 0 });
-})();
+}
+
+applyStage(0);
