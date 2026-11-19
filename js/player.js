@@ -4,6 +4,10 @@
    Movement constants are the v0.3 values (confirmed working):
      gravity 34 · jump 13.8 · double jump · run 12.2 · dash 28 for .2s
    Attacks never lock movement; swings add a small forward lunge only.
+
+   v0.5 body slots: R-ARM weapon (Blade/Cannon, swappable), L-ARM Shield and
+   LEGS Blink each have their own button and work at the same time.
+   `player.chip` = the weapon currently on the R-ARM.
    ===================================================================== */
 const MOVE = { gravity: 34, jump: 13.8, run: 12.2, dash: 28, dashTime: 0.2, dashCd: 0.78, accelGround: 18, accelAir: 11 };
 const PARRY_WINDOW = 0.2, PARRY_COOLDOWN = 0.55;
@@ -27,6 +31,7 @@ const player = {
   shielding: false, shieldPrev: false, shieldAmt: 0, parryT: 0, blockFlash: 0,
   anim: 'idle', t: 0, run: 0, rot: 0, flipT: 0, warpU: 0, recoil: 0, muzzle: 0, xf: 1, flash: 0, hurtT: 0, landT: 0,
   dead: false, deadT: 0, burst: false, ghostT: 0, px: 3, py: 0, scarf: new Float32Array(SCARF_N * 2),
+  hasShield: false, hasBlink: false, aim: 0, aimMode: 'auto', aimTarget: null, blinkBuf: 0,
 };
 
 function resetPlayer() {
@@ -35,8 +40,9 @@ function resetPlayer() {
     x: 3, y: 0, vx: 0, vy: 0, facing: 1, onGround: true, airJumps: 0, hp: p.maxhp, inv: 0, dash: 0, dashCd: 0, checkpoint: 0,
     chip: 'blade', atkStep: 0, atkT: 0, atkU: 0, comboStep: 0, comboWin: 0, atkBuf: 0, shielding: false, shieldPrev: false,
     shieldAmt: 0, parryT: 0, blockFlash: 0, anim: 'idle', rot: 0, flipT: 0, warpU: 0, recoil: 0, muzzle: 0, xf: 1, flash: 0,
-    hurtT: 0, landT: 0, dead: false, deadT: 0, ghostT: 0, px: 3, py: 0,
+    hurtT: 0, landT: 0, dead: false, deadT: 0, ghostT: 0, px: 3, py: 0, aim: 0, aimTarget: null, blinkBuf: 0,
   });
+  syncSlots();
   p.atkHits.length = 0;
   for (const k in p.cd) p.cd[k] = 0;
   resetScarf();
@@ -46,38 +52,49 @@ function resetScarf() {
   for (let i = 0; i < SCARF_N; i++) { s[i * 2] = -4 - i * 3; s[i * 2 + 1] = -34 + i * 0.4; }
 }
 
-/* ------------------------------------------------------------------ chips */
-function switchChip(id, silent) {
+/* ------------------------------------------------------------------ chips / body slots */
+const WEAPONS = ['blade', 'cannon'];
+function syncSlots() { player.hasShield = player.unlocked.has('shield'); player.hasBlink = player.unlocked.has('blink'); }
+
+function switchChip(id, silent) {                                       // R-ARM weapon swap (Blade <-> Cannon)
   const p = player;
-  if (!p.unlocked.has(id) || p.chip === id || p.dead) return;
+  if (!WEAPONS.includes(id) || !p.unlocked.has(id) || p.chip === id || p.dead) return;
   p.chip = id; p.xf = 0;
-  p.atkStep = 0; p.atkU = 0; p.shielding = false; p.shieldAmt = 0; p.parryT = 0;
-  p.muzzle = 0; p.recoil = 0;
+  p.atkStep = 0; p.atkU = 0; p.muzzle = 0; p.recoil = 0;
   HUD.setActive(id, true);
   if (silent) return;
-  const A = ACCENT[id];
-  FX.bits(p.x + p.facing * 0.4, p.y + 1.2, A.m, 12);
-  FX.ring(p.x + p.facing * 0.4, p.y + 1.2, 3, 20, 0.22, A.m);
-  FX.disc(p.x + p.facing * 0.4, p.y + 1.2, 6, 0.1, '#ffffff');
+  const A = ACCENT[id], hx = p.x + p.facing * 0.4, hy = p.y + 1.2;
+  FX.bits(hx, hy, A.m, 12);
+  FX.ring(hx, hy, 3, 20, 0.22, A.m);
+  FX.disc(hx, hy, 6, 0.1, '#ffffff');
   FX.text(CHIP_INFO[id].name, p.x, p.y + 2.9, A.m, 0.7);
   FX.kick(1.2);
   SFX.play('xform');
 }
-function cycleChipDir(dir) {
-  const avail = CHIP_ORDER.filter(c => player.unlocked.has(c));
-  if (avail.length < 2) return;
-  switchChip(avail[(avail.indexOf(player.chip) + dir + avail.length) % avail.length]);
+function swapWeapon() {
+  const p = player;
+  if (!p.unlocked.has('cannon')) { HUD.toast('NO SECOND WEAPON YET', '#8ea3c4', 1.2); return; }
+  switchChip(p.chip === 'blade' ? 'cannon' : 'blade');
 }
+function cycleChipDir() { swapWeapon(); }
+
+const UNLOCK_HINT = {
+  cannon: '[Q] swaps BLADE / CANNON  ·  cannon auto-aims, hold [I] up / [S] down to steer',
+  shield: 'hold [L] to guard while you fight  ·  tap it right before a hit to PARRY',
+  blink:  '[K] warps through enemies with any weapon',
+};
 function unlockChip(id) {
   const p = player;
   if (p.unlocked.has(id)) return;
-  p.unlocked.add(id); saveUnlocked(p.unlocked);
+  p.unlocked.add(id); saveUnlocked(p.unlocked); syncSlots();
   HUD.setUnlocked(p.unlocked);
-  switchChip(id);
+  if (WEAPONS.includes(id)) switchChip(id);                              // a new weapon is equipped straight away
   const A = ACCENT[id];
-  HUD.toast(`◈ ${CHIP_INFO[id].name} CHIP UNLOCKED — PERMANENT`, A.m, 2.4);
-  FX.ring(p.x, p.y + 1, 4, 40, 0.4, A.m); FX.ring(p.x, p.y + 1, 2, 28, 0.3, '#ffffff');
-  FX.burst(p.x, p.y + 1.2, 26, A.m, 11);
+  HUD.toast(`◈ ${CHIP_INFO[id].slot} UPGRADE: ${CHIP_INFO[id].name}`, A.m, 2.2);
+  HUD.hint(UNLOCK_HINT[id], A.m);
+  const oy = id === 'blink' ? 0.3 : 1.1;                                 // burst on the body part that changed
+  FX.ring(p.x, p.y + oy, 4, 40, 0.4, A.m); FX.ring(p.x, p.y + oy, 2, 28, 0.3, '#ffffff');
+  FX.burst(p.x, p.y + oy, 26, A.m, 11); FX.bits(p.x, p.y + oy, A.l, 14);
   FX.screenFlash(0.25, A.l);
   SFX.play('pickup');
 }
@@ -116,7 +133,38 @@ function doDash() {
 function snapshot() {                                                  // frozen copy of the visual state (afterimages)
   const p = player;
   return { x: p.x, y: p.y, facing: p.facing, anim: p.anim, t: p.t, run: p.run, chip: p.chip, atkStep: p.atkStep, atkU: p.atkU,
-    shieldAmt: p.shieldAmt, parryT: 0, blockFlash: 0, recoil: p.recoil, muzzle: 0, xf: 1, rot: p.rot, warpU: p.warpU, scarf: p.scarf.slice() };
+    shieldAmt: p.shieldAmt, parryT: 0, blockFlash: 0, recoil: p.recoil, muzzle: 0, xf: 1, rot: p.rot, warpU: p.warpU, scarf: p.scarf.slice(),
+    hasShield: p.hasShield, hasBlink: p.hasBlink, aim: p.aim };
+}
+
+/* ------------------------------------------------------------------ aiming (cannon, keyboard / gamepad) */
+function shoulderWorld() { poseOf(player); return { x: player.x + player.facing * Q.sx / PPU, y: player.y + Q.sy / PPU }; }
+function updateAim(dt) {
+  const p = player, sh = shoulderWorld();
+  let ang = 0;
+  p.aimTarget = null;
+  if (Aim.pad) {                                                        // gamepad right stick: free aim
+    p.aimMode = 'manual';
+    if (Aim.padX > 0.2) p.facing = 1; else if (Aim.padX < -0.2) p.facing = -1;
+    ang = Math.atan2(Aim.padY, Math.max(0.05, Math.abs(Aim.padX)));
+  } else if (inputAimUp() || inputAimDown()) {                          // I / S (or arrows / stick): 8-way
+    p.aimMode = 'manual';
+    const moving = inputLeft() || inputRight();
+    ang = inputAimUp() ? (moving ? 45 : 85) * DEG : (moving || p.onGround ? -45 : -85) * DEG;
+  } else {                                                              // default: lock the closest enemy ahead
+    p.aimMode = 'auto';
+    let best = null, bd = 15;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const dx = (e.x - p.x) * p.facing, dy = e.y + e.h * 0.55 - sh.y;
+      if (dx < 0.4 || Math.abs(dy) > dx * 3) continue;                  // ahead, within ~70 degrees
+      const d = Math.hypot(dx, dy);
+      if (d < bd) { bd = d; best = e; }
+    }
+    if (best) { p.aimTarget = best; ang = Math.atan2(best.y + best.h * 0.55 - sh.y, Math.abs(best.x - sh.x)); }
+  }
+  ang = clamp(ang, -85 * DEG, 85 * DEG);
+  p.aim += (ang - p.aim) * Math.min(1, dt * 28);
 }
 
 function startSwing() {
@@ -140,19 +188,30 @@ function updateSwing(dt) {
     if (p.atkStep === 3) FX.dust(p.x + p.facing, p.y, 5, p.facing);
   }
   if (p.atkT >= S.act[0] && p.atkT <= S.act[1]) bladeHitCheck(S, p.atkStep);
+  if (p.atkT >= S.act[0] - 0.02 && p.atkT <= S.act[1] + 0.05) bladeDeflect(S, p.atkStep);   // the blade also bats bolts back
   if (p.atkT >= p.atkDur) {
     if (p.atkStep === 3) p.comboWin = 0;                               // finisher ends the chain
     p.atkStep = 0; p.atkU = 0;
   }
 }
 
+function muzzleWorld() {
+  const p = player, sh = shoulderWorld(), c = Math.cos(p.aim), s = Math.sin(p.aim), L = 27 / PPU;
+  return { x: sh.x + p.facing * c * L, y: sh.y + s * L, dx: p.facing * c, dy: s };
+}
 function fireCannon() {
   const p = player, f = p.facing;
+  if (p.aimTarget) {                                                     // snap the shot onto the locked target
+    const sh = shoulderWorld(), e = p.aimTarget;
+    p.aim = clamp(Math.atan2(e.y + e.h * 0.55 - sh.y, Math.abs(e.x - sh.x)), -85 * DEG, 85 * DEG);
+  }
+  const m = muzzleWorld();
   p.cd.cannon = 0.30; p.cdMax.cannon = 0.30; p.muzzle = 0.1; p.recoil = 1;
-  bullets.push({ x: p.x + f * 1.3, y: p.y + 1.08, vx: f * 31, life: 1.2, dmg: 1, trail: 0 });
-  p.vx -= f * 2.5;
+  bullets.push({ x: m.x, y: m.y, vx: m.dx * 31, vy: m.dy * 31, life: 1.2, dmg: 1, trail: 0 });
+  p.vx -= m.dx * 2.5;
   FX.kick(1.4, -f * 0.5);
-  FX.hitSparks(p.x + f * 1.5, p.y + 1.08, f, 0, '#ffe078', '#ffffff');
+  for (let i = 0; i < 6; i++) FX.spark(m.x, m.y, Math.atan2(m.dy, m.dx) + rnd(-0.5, 0.5), rnd(6, 12), rnd(0.08, 0.16), i % 2 ? '#ffe078' : '#ffffff', { g: 6 });
+  FX.disc(m.x, m.y, 4, 0.06, '#ffffff');
   FX.add(PT.CHIP, p.x + f * 0.3, p.y + 1.2, -f * rnd(1, 3), rnd(3, 5), 0.4, '#ffc43d', { g: 24, sz: 1 });
   SFX.play('shoot');
 }
@@ -187,13 +246,13 @@ function updatePlayer(dt) {
   p.muzzle = Math.max(0, p.muzzle - dt); p.recoil = Math.max(0, p.recoil - dt / 0.14);
   p.parryT = Math.max(0, p.parryT - dt); p.blockFlash = Math.max(0, p.blockFlash - dt);
   p.comboWin = Math.max(0, p.comboWin - dt); p.atkBuf = Math.max(0, p.atkBuf - dt);
-  p.xf = Math.min(1, p.xf + dt / 0.28);
+  p.xf = Math.min(1, p.xf + dt / 0.28); p.blinkBuf = Math.max(0, p.blinkBuf - dt);
   for (const k in p.cd) p.cd[k] = Math.max(0, p.cd[k] - dt);
   if (p.flipT > 0) { p.flipT = Math.max(0, p.flipT - dt); p.rot = p.atkStep ? 0 : -(1 - p.flipT / 0.36) * TAU; if (p.flipT === 0) p.rot = 0; }
 
   if (p.dead) { updateDeath(dt); finishFrame(dt); return; }
 
-  const left = inputLeft(), right = inputRight(), held = inputAttackHeld();
+  const left = inputLeft(), right = inputRight(), held = inputAttackHeld(), shieldHeld = inputShieldHeld();
   const dir = (right ? 1 : 0) - (left ? 1 : 0);
   if (dir) p.facing = dir;
 
@@ -203,17 +262,25 @@ function updatePlayer(dt) {
   pressed.dash = false;
   if (pressed.attack) p.atkBuf = 0.16;
   pressed.attack = false;
+  if (pressed.blink) p.blinkBuf = 0.16;
+  pressed.blink = false;
 
-  /* ---- chip action ---- */
-  const wantShield = p.chip === 'shield' && held && p.dash <= 0;
+  updateAim(dt);
+
+  /* ---- L-ARM: shield (independent of the weapon) ---- */
+  const wantShield = p.hasShield && shieldHeld && p.dash <= 0;
   if (wantShield && !p.shieldPrev && p.cd.shield <= 0) { p.parryT = PARRY_WINDOW; p.cd.shield = PARRY_COOLDOWN; p.cdMax.shield = PARRY_COOLDOWN; SFX.play('swap'); }
   p.shielding = wantShield; p.shieldPrev = wantShield;
   p.shieldAmt = clamp(p.shieldAmt + (wantShield ? 1 : -1) * dt / 0.09, 0, 1);
 
-  if (p.dash <= 0 && !p.shielding) {
+  /* ---- LEGS: blink ---- */
+  if (p.blinkBuf > 0 && p.hasBlink && p.cd.blink <= 0 && p.dash <= 0) { doBlink(); p.blinkBuf = 0; }
+  else if (p.blinkBuf > 0 && !p.hasBlink) { p.blinkBuf = 0; HUD.toast('LEGS SLOT EMPTY — FIND THE BLINK CHIP', '#8ea3c4', 1.2); }
+
+  /* ---- R-ARM: weapon ---- */
+  if (p.dash <= 0) {
     if (p.chip === 'blade' && (p.atkBuf > 0 || held) && p.cd.blade <= 0) { startSwing(); p.atkBuf = 0; }
     else if (p.chip === 'cannon' && (p.atkBuf > 0 || held) && p.cd.cannon <= 0) { fireCannon(); p.atkBuf = 0; }
-    else if (p.chip === 'blink' && p.atkBuf > 0 && p.cd.blink <= 0) { doBlink(); p.atkBuf = 0; }
   }
   updateSwing(dt);
 

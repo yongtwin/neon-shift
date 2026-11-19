@@ -61,6 +61,32 @@ function bladeHitCheck(S, step) {
   }
 }
 
+/* blade deflect: any bolt inside the swing is batted back at whoever fired it */
+function bladeDeflect(S, step) {
+  const p = player, f = p.facing;
+  const x0 = f > 0 ? p.x + S.box[0] : p.x - S.box[1] - 0.3, x1 = f > 0 ? p.x + S.box[1] + 0.3 : p.x - S.box[0];
+  const y0 = p.y + S.box[2] - 0.2, y1 = p.y + S.box[3] + 0.2;
+  for (const b of enemyBullets) {
+    if (b.life <= 0 || b.x < x0 || b.x > x1 || b.y < y0 || b.y > y1) continue;
+    reflectBullet(b, step === 3 ? 4 : 3, ACCENT.blade);
+    FX.text('DEFLECT!', p.x, p.y + 2.8, ACCENT.blade.l, 0.6);
+    FX.stop(0.06); FX.kick(2.4, f);
+    SFX.play('parry');
+    Game.addCombo();
+  }
+}
+
+/* send an enemy bolt back toward its shooter (or straight back if it is gone) */
+function reflectBullet(b, dmg, A) {
+  b.life = 0;
+  let dx = -Math.sign(b.vx || 1), dy = 0;
+  const o = b.owner;
+  if (o && o.alive) { const tx = o.x - b.x, ty = o.y + o.h * 0.55 - b.y, d = Math.hypot(tx, ty) || 1; dx = tx / d; dy = ty / d; }
+  bullets.push({ x: b.x, y: b.y, vx: dx * 24, vy: dy * 24, life: 1.4, dmg, reflected: true, trail: 0 });
+  FX.ring(b.x, b.y, 2, 18, 0.2, '#ffffff'); FX.disc(b.x, b.y, 7, 0.09, '#ffffff');
+  FX.hitSparks(b.x, b.y, Math.sign(dx) || 1, 1, A.m, A.l);
+}
+
 function blinkHit(a, b) {
   const p = player, f = p.facing, lo = Math.min(a, b) - 1, hi = Math.max(a, b) + 1, A = ACCENT.blink;
   for (const e of enemies) {
@@ -73,7 +99,7 @@ function blinkHit(a, b) {
 /* ------------------------------------------------------------------ player being hit / defending */
 function defendCheck(srcX) {
   const p = player;
-  if (!p.shielding || p.chip !== 'shield') return null;
+  if (!p.shielding) return null;
   if ((srcX - p.x) * p.facing < -0.5) return null;                      // shield only covers the front
   return p.parryT > 0 ? 'parry' : 'block';
 }
@@ -120,10 +146,7 @@ function doParry(o) {
   FX.text('PARRY!', p.x, p.y + 2.8, '#ffffff', 0.8);
   FX.stop(0.1); FX.kick(3.2, -f * 0.5); FX.screenFlash(0.22, '#d8ccff');
   SFX.play('parry');
-  if (o.bullet) {                                                       // reflect the bolt back, stronger
-    const b = o.bullet; b.life = 0;
-    bullets.push({ x: x, y: y, vx: -b.vx * 1.7, life: 1.4, dmg: 3, reflected: true, trail: 0 });
-  }
+  if (o.bullet) reflectBullet(o.bullet, 3, A);                          // reflect the bolt back at its shooter
   if (o.melee) {
     const e = o.melee;
     e.kvx = -e.facing * 9; e.stun = 0; setState(e, 'stagger'); e.flash = 0.1; e.lungeHit = true;
@@ -146,14 +169,15 @@ function doBlock(o) {
 function updateBullets(dt) {
   const A = ACCENT.cannon;
   for (const b of bullets) {
-    b.x += b.vx * dt; b.life -= dt; b.trail -= dt;
-    if (b.trail <= 0) { b.trail = 0.018; FX.add(PT.CHIP, b.x - Math.sign(b.vx) * 0.5, b.y + rnd(-0.08, 0.08), 0, 0, 0.14, b.reflected ? '#ece4ff' : '#ffb347', { sz: 1 }); }
+    b.x += b.vx * dt; b.y += (b.vy || 0) * dt; b.life -= dt; b.trail -= dt;
+    if (b.y < -3) b.life = 0;
+    if (b.trail <= 0) { const sp = Math.hypot(b.vx, b.vy || 0) || 1; b.trail = 0.018; FX.add(PT.CHIP, b.x - b.vx / sp * 0.5, b.y - (b.vy || 0) / sp * 0.5, 0, 0, 0.14, b.reflected ? '#ece4ff' : '#ffb347', { sz: 1 }); }
     for (const e of enemies) {
       if (!e.alive || b.life <= 0) continue;
       const h = hurtbox(e);
       if (b.x > h.x0 - 0.3 && b.x < h.x1 + 0.3 && b.y > h.y0 - 0.1 && b.y < h.y1 + 0.1) {
         const dir = Math.sign(b.vx);
-        const c1 = b.reflected ? ACCENT.shield.m : A.m, c2 = b.reflected ? ACCENT.shield.l : A.l;
+        const c1 = b.reflected ? '#ffffff' : A.m, c2 = b.reflected ? ACCENT.blade.l : A.l;
         damageEnemy(e, b.dmg, { dirX: dir, kb: b.reflected ? 8 : 3.5, hs: b.reflected ? 0.07 : 0.03, shake: b.reflected ? 3 : 1.2, power: b.reflected ? 2 : 1, x: b.x, y: b.y, c1, c2, stun: b.reflected ? 0.3 : 0.18 });
         FX.ring(b.x, b.y, 2, 12, 0.14, c2);
         b.life = 0; SFX.play('bolt');

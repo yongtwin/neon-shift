@@ -364,12 +364,32 @@ function drawEnemyBullet(b) {
   disc(X, Y, 3, '#0a0508'); disc(X, Y, 2, '#ff3b4a'); px(X, Y, '#fff0c8'); px(X - 1, Y - 1, '#ffb347');
   glow(X, Y, '#ff3b4a', 11, 0.8);
 }
-function drawPlayerBullet(b) {
-  const X = sx(b.x), Y = sy(b.y), s = Math.sign(b.vx), refl = b.reflected;
-  const c1 = refl ? ACCENT.shield.m : '#ffc43d', c2 = refl ? '#ffffff' : '#fff3b8';
-  g.globalAlpha = 0.45; R(X - s * 14 - (s < 0 ? 0 : 0), Y - 1, 14, 3, c1); g.globalAlpha = 1;
-  R(X - 6, Y - 2, 12, 5, '#05070e'); R(X - 5, Y - 1, 10, 3, c1); R(X - 4, Y, 9, 1, c2);
+function drawPlayerBullet(b) {                                       // drawn along its flight direction
+  const X = sx(b.x), Y = sy(b.y), sp = Math.hypot(b.vx, b.vy || 0) || 1, ux = b.vx / sp, uy = -(b.vy || 0) / sp, refl = b.reflected;
+  const c1 = refl ? '#9ff6ff' : '#ffc43d', c2 = '#ffffff';
+  g.globalAlpha = 0.45; line(X - ux * 16, Y - uy * 16, X, Y, 3, c1); g.globalAlpha = 1;
+  line(X - ux * 6, Y - uy * 6, X + ux * 5, Y + uy * 5, 5, '#05070e');
+  line(X - ux * 5, Y - uy * 5, X + ux * 4, Y + uy * 4, 3, c1);
+  line(X - ux * 3, Y - uy * 3, X + ux * 4, Y + uy * 4, 1, c2);
   glow(X, Y, c1, 14, 0.85);
+}
+
+/* cannon aim guide: dotted sight line + lock-on brackets on the auto-aim target */
+function drawAimGuide() {
+  const p = player;
+  if (p.chip !== 'cannon' || p.dead || !Game.running) return;
+  const m = muzzleWorld(), X0 = sx(m.x), Y0 = sy(m.y), tm = Game.time;
+  const len = p.aimTarget ? Math.min(150, Math.hypot(p.aimTarget.x - m.x, p.aimTarget.y + p.aimTarget.h * 0.55 - m.y) * PPU - 10) : 70;
+  g.globalAlpha = 0.55;
+  for (let d = 6 + ((tm * 40) % 6); d < len; d += 6) px(X0 + m.dx * d, Y0 - m.dy * d, '#ffc43d');
+  g.globalAlpha = 1;
+  const e = p.aimTarget;
+  if (e) {
+    const cx = sx(e.x), cy = sy(e.y + e.h * 0.55), r = 9 + Math.round(Math.sin(tm * 10)), c = '#ffc43d';
+    for (const [ax, ay] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      R(cx + ax * r - (ax > 0 ? 3 : 0), cy + ay * r, 4, 1, c); R(cx + ax * r, cy + ay * r - (ay > 0 ? 3 : 0), 1, 4, c);
+    }
+  }
 }
 
 function drawPlayerEntity() {
@@ -407,6 +427,7 @@ function renderFrame() {
   drawCheckpoints(); drawPortal(); drawPickups();
   for (const e of enemies) if (e.alive) drawEnemyEntity(e);
   FX.drawBelow();
+  drawAimGuide();
   drawPlayerEntity();
   FX.drawSlashes(); FX.drawBeams();
   for (const b of bullets) drawPlayerBullet(b);
@@ -431,7 +452,7 @@ function drawHero() {
   g = heroCtx;
   const sc = new Float32Array(SCARF_N * 2), tm = Game.time;
   for (let i = 0; i < SCARF_N; i++) { sc[i * 2] = -4 - i * 3 - Math.sin(tm * 3 + i) * 1.5; sc[i * 2 + 1] = -33 + i * 1.2 + Math.sin(tm * 4 + i * 0.8) * 1.6; }
-  const chip = CHIP_ORDER[((tm / 2.2) | 0) % CHIP_ORDER.length];
-  drawPlayer({ facing: 1, anim: 'idle', t: tm, run: 0, chip, atkStep: 0, atkU: 0, shieldAmt: chip === 'shield' ? 0.6 : 0, parryT: 0, blockFlash: 0, recoil: 0, muzzle: 0, xf: 1, rot: 0, warpU: 0, scarf: sc }, 30, 74);
+  const ph = ((tm / 2.2) | 0) % 4;
+  drawPlayer({ facing: 1, anim: 'idle', t: tm, run: 0, chip: ph % 2 ? 'cannon' : 'blade', atkStep: 0, atkU: 0, shieldAmt: ph >= 2 ? 0.7 : 0, parryT: 0, blockFlash: 0, recoil: 0, muzzle: 0, xf: 1, rot: 0, warpU: 0, scarf: sc, hasShield: true, hasBlink: true, aim: 0 }, 30, 74);
   g = prev;
 }

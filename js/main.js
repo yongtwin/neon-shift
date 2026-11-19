@@ -10,7 +10,8 @@ const Game = {
 
   focus() { try { gameEl.focus({ preventScroll: true }); } catch { gameEl.focus(); } },
   selectChip(id) { if (id && this.running && !this.paused) switchChip(id); },
-  cycleChip(d) { if (this.running) cycleChipDir(d); },
+  cycleChip(d) { if (this.running && !this.paused) cycleChipDir(d); },
+  swapWeapon() { if (this.running && !this.paused) swapWeapon(); },
   moveNudge(d, amt) { nudge(d, amt); },
   addCombo() { this.combo++; this.comboT = 2.2; if (this.combo > this.bestCombo) this.bestCombo = this.combo; },
   resetCombo() { this.combo = 0; this.comboT = 0; },
@@ -27,16 +28,18 @@ const Game = {
     this.running = true; this.paused = false;
     this.snapCamera();
     HUD.toast('MISSION START // FIND THE CHIPS', '#2fe6ff');
+    HUD.hint('[J] SLASH — swing into enemy bolts to DEFLECT them  ·  [W] JUMP ×2  ·  [SHIFT] DASH', '#d6fdff', 8);
+    SFX.startMusic();
     this.focus();
   },
   togglePause() {
     if (!this.running) return;
     this.paused = !this.paused;
-    if (this.paused) HUD.toast('PAUSED', '#8ea3c4', 9999); else { HUD.toast('', '#8ea3c4', 0.01); }
+    if (this.paused) { HUD.toast('PAUSED', '#8ea3c4', 9999); SFX.stopMusic(); } else { HUD.toast('', '#8ea3c4', 0.01); SFX.startMusic(); }
   },
   complete() {
     this.running = false;
-    SFX.play('win');
+    SFX.play('win'); SFX.stopMusic();
     const t = Math.floor(this.runTime), time = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
     HUD.showOverlay('complete', { message: 'EXTRACTION COMPLETE — YOU REWROTE THE SYSTEM', kills: this.kills, total: enemies.length, chips: player.unlocked.size, time, bestCombo: this.bestCombo });
   },
@@ -83,6 +86,7 @@ function update(dt) {
   if (Game.combo > 0) { Game.comboT -= dt; if (Game.comboT <= 0) Game.resetCombo(); }
   HUD.setCombo(Game.combo, Game.comboT / 2.2);
   for (const id of CHIP_ORDER) HUD.setCooldown(id, player.cdMax[id] > 0 ? clamp(player.cd[id] / player.cdMax[id], 0, 1) : 0);
+  HUD.setLive('shield', player.shielding); HUD.setLive('blink', player.warpU > 0);
   HUD.setProgress(clamp(Math.round(player.x / 139 * 100), 0, 100));
 
   for (const d of DECOR) {                                              // street steam
@@ -121,8 +125,9 @@ function drawViewer() {
       ['idle', { atkStep: 1, atkU: 0.45 }], ['idle', { atkStep: 2, atkU: 0.45 }], ['idle', { atkStep: 3, atkU: 0.55 }],
     ];
     CHIP_ORDER.forEach((chip, r) => poses.forEach((ps, i) => {
-      const p = Object.assign({ facing: 1, anim: ps[0], t: tm, run: 0, chip, atkStep: 0, atkU: 0, shieldAmt: chip === 'shield' && r === 2 ? 0.8 : 0, parryT: 0, blockFlash: 0, recoil: 0, muzzle: chip === 'cannon' && i === 9 ? 0.1 : 0, xf: 1, rot: 0, warpU: chip === 'blink' && i === 11 ? 1 : 0, scarf: viewerScarf(ps[0]) }, ps[1]);
-      if (chip !== 'blade' && p.atkStep) { p.atkStep = 0; }
+      const weapon = r % 2 ? 'cannon' : 'blade';
+      const p = Object.assign({ facing: 1, anim: ps[0], t: tm, run: 0, chip: weapon, atkStep: 0, atkU: 0, shieldAmt: r >= 2 ? 0.8 : 0, parryT: 0, blockFlash: 0, recoil: 0, muzzle: weapon === 'cannon' && i === 9 ? 0.1 : 0, xf: 1, rot: 0, warpU: 0, scarf: viewerScarf(ps[0]), hasShield: r >= 2, hasBlink: r >= 1, aim: weapon === 'cannon' ? (i - 6) * 0.25 : 0 }, ps[1]);
+      if (weapon !== 'blade' && p.atkStep) { p.atkStep = 0; }
       drawPlayer(p, 34 + i * 58, 58 + r * 64);
     }));
   } else {
@@ -145,7 +150,7 @@ function boot() {
   screenCtx = screenEl.getContext('2d', { alpha: false });
   heroCtx = $('hero').getContext('2d'); heroCtx.imageSmoothingEnabled = false;
   g = screenCtx;
-  player.unlocked = loadUnlocked();
+  player.unlocked = loadUnlocked(); syncSlots();
   HUD.init(); FX.init();
   HUD.setUnlocked(player.unlocked); HUD.setActive('blade', false); HUD.setHealth(player.hp, player.maxhp, false);
   buildArt();
@@ -155,11 +160,12 @@ function boot() {
   window.addEventListener('resize', resizeView);
   $('start').addEventListener('click', () => Game.restart());
   $('clear').addEventListener('click', () => {
-    player.unlocked = new Set(['blade']); saveUnlocked(player.unlocked);
+    player.unlocked = new Set(['blade']); saveUnlocked(player.unlocked); syncSlots();
     HUD.setUnlocked(player.unlocked); HUD.setActive('blade', false);
     $('save-note').textContent = 'Saved collection reset. Only BLADE is unlocked.';
   });
   gameEl.addEventListener('pointerdown', e => { if (!e.target.closest('button')) Game.focus(); });
+  window.addEventListener('keydown', e => { if (keyName(e) === 'KeyN') HUD.toast(SFX.toggleMusic() ? 'MUSIC ON' : 'MUSIC OFF', '#8ea3c4', 1); });
   if (location.hash === '#sprites') Game.viewer = 'sprites'; else if (location.hash === '#enemies') Game.viewer = 'enemies';
   if (Game.viewer) { $('overlay').style.display = 'none'; $('hud').style.display = 'none'; $('hint').style.display = 'none'; }
   else { HUD.showOverlay('title'); Game.focus(); }
@@ -170,8 +176,8 @@ function boot() {
 window.NS = {
   get game() { return Game; }, player, FX, get enemies() { return enemies; }, get bullets() { return bullets; }, get enemyBullets() { return enemyBullets; },
   step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) update(dt); },
-  hold(k, v = true) { keys[k] = v; }, press(k) { if (k === 'jump') pressed.jump = true; else if (k === 'dash') pressed.dash = true; else if (k === 'attack') pressed.attack = true; },
-  unlockAll() { for (const c of CHIP_ORDER) player.unlocked.add(c); saveUnlocked(player.unlocked); HUD.setUnlocked(player.unlocked); },
+  hold(k, v = true) { keys[k] = v; }, press(k) { if (k in pressed) pressed[k] = true; },
+  unlockAll() { for (const c of CHIP_ORDER) player.unlocked.add(c); saveUnlocked(player.unlocked); syncSlots(); HUD.setUnlocked(player.unlocked); },
   tp(x, y = 0) { player.x = x; player.y = y; player.vx = 0; player.vy = 0; Game.snapCamera(); },
 };
 

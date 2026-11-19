@@ -93,5 +93,79 @@ const SFX = (() => {
     try { S[name](a); } catch { /* audio must never break the game loop */ }
   }
   function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.6; return muted; }
-  return { init, play, toggleMute, get muted() { return muted; } };
+
+  /* ------------------------------------------------------------------ EDM background track
+     128 BPM, A minor (Am – F – C – G), 16-bar loop: 4-bar intro build, then the full drop.
+     Synthesised live with a look-ahead step sequencer — no audio files. */
+  const BPM = 128, STEP = 60 / BPM / 4, LOOP = 16;
+  const ROOT = [55, 43.65, 65.41, 49];                                  // bass roots A1 F1 C2 G1
+  const CHORD = [[220, 261.6, 329.6], [174.6, 220, 261.6], [261.6, 329.6, 392], [196, 246.9, 293.7]];
+  const ARP = [0, 1, 2, 3, 2, 1, 0, 2, 1, 3, 2, 0, 3, 2, 1, 2];        // index into chord tones (3 = octave)
+  let music = null;
+
+  function startMusic() {
+    if (!ctx) return;
+    if (music) { music.paused = false; music.bus.gain.setTargetAtTime(music.on ? 0.42 : 0, ctx.currentTime, 0.1); return; }
+    const bus = ctx.createGain(); bus.gain.value = 0.42; bus.connect(master);
+    const pump = ctx.createGain(); pump.gain.value = 1; pump.connect(bus);       // sidechain target (bass, pads, arp)
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 6; lp.connect(pump);
+    music = { bus, pump, lp, on: true, paused: false, step: 0, next: ctx.currentTime + 0.1, timer: null };
+    music.timer = setInterval(schedule, 25);
+  }
+  function stopMusic() { if (music) { music.paused = true; music.bus.gain.setTargetAtTime(0, ctx.currentTime, 0.15); } }
+  function toggleMusic() {
+    if (!music) return true;
+    music.on = !music.on;
+    music.bus.gain.setTargetAtTime(music.on && !music.paused ? 0.42 : 0, ctx.currentTime, 0.1);
+    return music.on;
+  }
+
+  function schedule() {
+    if (!music || music.paused || !music.on) { if (music) music.next = ctx.currentTime + 0.05; return; }
+    while (music.next < ctx.currentTime + 0.12) { playStep(music.step, music.next); music.next += STEP; music.step = (music.step + 1) % (LOOP * 16); }
+  }
+
+  function voice(type, f, t, dur, vol, dest, attack = 0.005) {
+    const o = ctx.createOscillator(), gn = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(vol, t + attack);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(gn); gn.connect(dest); o.start(t); o.stop(t + dur + 0.02);
+    return o;
+  }
+  function hit(t, dur, vol, f0, type, dest) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f0; fl.Q.value = 0.9;
+    const gn = ctx.createGain(); gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(fl); fl.connect(gn); gn.connect(dest); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+  }
+
+  function playStep(i, t) {
+    const bar = (i >> 4) % LOOP, s = i & 15, ch = bar & 3, intro = bar < 4, M = music;
+    const build = intro ? (bar + (s / 16)) / 4 : 1;                    // filter opens through the intro
+    M.lp.frequency.setTargetAtTime(intro ? 350 + build * 1100 : 1500 + 500 * Math.sin(i * 0.05), t, 0.08);
+    /* kick (4 on the floor) + sidechain pump */
+    if (!intro && s % 4 === 0) {
+      const o = ctx.createOscillator(), gn = ctx.createGain();
+      o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+      gn.gain.setValueAtTime(0.85, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      o.connect(gn); gn.connect(M.bus); o.start(t); o.stop(t + 0.32);
+      M.pump.gain.cancelScheduledValues(t); M.pump.gain.setValueAtTime(0.22, t); M.pump.gain.linearRampToValueAtTime(1, t + STEP * 3.2);
+    }
+    if (intro && bar === 3 && s >= 8 && s % 2 === 0) hit(t, 0.08, 0.05 + (s - 8) * 0.012, 2500, 'bandpass', M.bus);   // snare roll into the drop
+    /* hats: open on the off-beat, ticks on 16ths */
+    if (s % 4 === 2) hit(t, 0.09, 0.11, 7000, 'highpass', M.bus);
+    else if (!intro) hit(t, 0.025, 0.03, 9000, 'highpass', M.bus);
+    /* clap on 2 and 4 */
+    if (!intro && (s === 4 || s === 12)) { hit(t, 0.14, 0.2, 1500, 'bandpass', M.bus); hit(t + 0.012, 0.1, 0.1, 2200, 'bandpass', M.bus); }
+    /* pumping off-beat saw bass */
+    if (!intro && s % 4 === 2) { voice('sawtooth', ROOT[ch] * 2, t, STEP * 1.7, 0.16, M.lp); voice('square', ROOT[ch], t, STEP * 1.7, 0.08, M.lp); }
+    /* chord stab pad at the top of each bar */
+    if (s === 0) for (const f of CHORD[ch]) { voice('sawtooth', f, t, STEP * 15, 0.035, M.lp, 0.04); voice('sawtooth', f * 1.006, t, STEP * 15, 0.03, M.lp, 0.04); }
+    /* gated 16th arpeggio */
+    const note = CHORD[ch][ARP[s] % 3] * (ARP[s] === 3 ? 2 : 1) * (bar % 2 ? 2 : 1);
+    voice('square', note, t, STEP * 0.8, intro ? 0.02 + 0.02 * build : 0.035, M.lp);
+  }
+
+  return { init, play, toggleMute, startMusic, stopMusic, toggleMusic, get muted() { return muted; } };
 })();

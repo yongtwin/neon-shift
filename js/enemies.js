@@ -20,7 +20,7 @@ function makeEnemy(spec, i) {
 function spawnEnemies() { enemies = SPAWNS.map(makeEnemy); }
 
 function enemyShoot(e, speed, yOff, xOff) {
-  enemyBullets.push({ x: e.x + e.facing * xOff, y: e.y + yOff, vx: e.facing * speed, life: 2.1, dmg: 1, reflected: false });
+  enemyBullets.push({ x: e.x + e.facing * xOff, y: e.y + yOff, vx: e.facing * speed, life: 2.1, dmg: 1, reflected: false, owner: e });
   e.recoil = 1; e.muzzle = 0.08;
   FX.hitSparks(e.x + e.facing * (xOff + 0.4), e.y + yOff, e.facing, 0, '#ff6a5a', '#ffd27a');
   SFX.play('eshoot');

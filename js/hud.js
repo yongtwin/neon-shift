@@ -10,30 +10,46 @@ const HUD = {
     const hp = $('health');
     for (let i = 0; i < 6; i++) { const v = document.createElement('i'); hp.appendChild(v); this.pips.push(v); }
 
+    /* three body slots, each labelled with the button that fires it */
     const bar = $('chipbar');
-    CHIP_ORDER.forEach((id, i) => {
-      const info = CHIP_INFO[id], A = ACCENT[id];
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'chip'; b.dataset.chip = id; b.style.setProperty('--c', A.m);
-      const img = document.createElement('img');
-      img.className = 'ico'; img.alt = ''; img.src = makeChipIcon(id).toDataURL();
-      img.style.width = img.style.height = '32px';
-      const txt = document.createElement('span');
-      txt.innerHTML = `<span class="name">${info.name}</span><span class="sub">${info.sub}</span>`;
-      const key = document.createElement('span'); key.className = 'key'; key.textContent = String(i + 1);
-      const cd = document.createElement('span'); cd.className = 'cd';
-      const barEl = document.createElement('span'); barEl.className = 'bar';
-      b.append(img, txt, key, cd, barEl);
-      b.addEventListener('click', () => { Game.selectChip(id); Game.focus(); });
-      bar.appendChild(b);
-      this.chips[id] = { el: b, cd, img, sub: txt.querySelector('.sub'), name: txt.querySelector('.name'), cdv: 0 };
-    });
+    const groups = [['R-ARM', ['blade', 'cannon'], 'J'], ['L-ARM', ['shield'], 'L'], ['LEGS', ['blink'], 'K']];
+    for (const [label, ids, key] of groups) {
+      const grp = document.createElement('div'); grp.className = 'slot';
+      grp.innerHTML = `<div class="slot-label">${label} <kbd>${key}</kbd>${ids.length > 1 ? '<span class="swap">⇄ <kbd>Q</kbd></span>' : ''}</div>`;
+      const row = document.createElement('div'); row.className = 'slot-row';
+      for (const id of ids) {
+        const info = CHIP_INFO[id], A = ACCENT[id];
+        const b = document.createElement('div');
+        b.className = 'chip'; b.dataset.chip = id; b.style.setProperty('--c', A.m);
+        const img = document.createElement('img');
+        img.className = 'ico'; img.alt = ''; img.src = makeChipIcon(id).toDataURL();
+        img.style.width = img.style.height = '32px';
+        const txt = document.createElement('span');
+        txt.innerHTML = `<span class="name">${info.name}</span><span class="sub">${info.sub}</span>`;
+        const cd = document.createElement('span'); cd.className = 'cd';
+        const barEl = document.createElement('span'); barEl.className = 'bar';
+        b.append(img, txt, cd, barEl);
+        row.appendChild(b);
+        this.chips[id] = { el: b, cd, img, sub: txt.querySelector('.sub'), name: txt.querySelector('.name'), cdv: 0, live: false };
+      }
+      grp.appendChild(row); bar.appendChild(grp);
+    }
+  },
+  setLive(id, on) {                          // shield raised / blink firing: light the card up
+    const c = this.chips[id];
+    if (c.live === on) return;
+    c.live = on; c.el.classList.toggle('live', on);
+  },
+  hint(text, color = '#2fe6ff', dur = 6) {   // contextual tutorial line at the bottom of the screen
+    const el = $('hint'); el.textContent = text; el.style.color = color;
+    el.classList.remove('off'); this.hintT = dur;
   },
 
   setUnlocked(set) {
     for (const id of CHIP_ORDER) {
       const c = this.chips[id], has = set.has(id);
-      c.el.disabled = !has;
+      c.el.classList.toggle('locked', !has);
+      if (id === 'shield' || id === 'blink') c.el.classList.toggle('armed', has);
       c.sub.textContent = has ? CHIP_INFO[id].sub : 'LOCKED';
       c.img.style.filter = has ? '' : 'grayscale(1) brightness(.4)';
     }
@@ -97,7 +113,7 @@ const HUD = {
       $('ov-controls').style.display = 'none';
       $('start').textContent = '↻ PLAY AGAIN'; $('clear').style.display = 'none';
     } else {
-      set('ov-eyebrow', '◉ EXPERIMENTAL COMBAT BUILD · v0.4');
+      set('ov-eyebrow', '◉ EXPERIMENTAL COMBAT BUILD · v0.5');
       set('ov-title', 'NEON<span>//</span>SHIFT');
       set('ov-lead', 'RUN FAST. REWRITE YOUR BODY. NEVER DRAW A BAD HAND.');
       $('ov-controls').style.display = '';

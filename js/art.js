@@ -108,7 +108,7 @@ function poseOf(p) {
     if (grounded) { ffx = lerp(ffx, 8, k * 0.8); bfx = lerp(bfx, -6, k * 0.8); ffy *= 1 - k; bfy *= 1 - k; hipH -= 1.5 * k; }
   }
   if (p.warpU > 0) { const w = p.warpU; lean += 8 * w; hipH -= 3.5 * w; ffx = lerp(ffx, 8, w); bfx = lerp(bfx, -8, w); ffy *= 1 - w; bfy *= 1 - w; }
-  if (p.chip === 'shield' && p.shieldAmt > 0.3) { hipH -= 1; ffx = lerp(ffx, 6, p.shieldAmt); bfx = lerp(bfx, -5, p.shieldAmt); }
+  if (p.shieldAmt > 0.3) { hipH -= 1; ffx = lerp(ffx, 6, p.shieldAmt); bfx = lerp(bfx, -5, p.shieldAmt); }
   if (p.recoil > 0) lean -= 2 * p.recoil;
   if (p.landT > 0) hipH -= 2.5 * Math.min(1, p.landT / 0.1);
 
@@ -141,27 +141,15 @@ function weaponArm(p) {
       else { hx = S.sx + 7; hy = S.sy - 6; ang = 28; len = 20; }
       len *= ext;
       break;
-    case 'cannon':
-      ang = st === 'run' ? -12 : st === 'dash' ? 180 : -6;
-      if (st === 'dash') { hx = S.sx - 4; hy = S.sy - 5; }
-      else if (st === 'run') { hx = S.sx + 5; hy = S.sy - 6; }
-      else if (st === 'jump' || st === 'fall') { hx = S.sx + 7; hy = S.sy - 2; ang = 0; }
-      else { hx = S.sx + 7; hy = S.sy - 4; }
-      if (p.recoil > 0) { hx -= p.recoil * 3; hy += p.recoil * 1; ang = Math.min(ang + 6 * p.recoil, 12); }
+    default: {                                                          // cannon: the arm tracks the aim angle
+      if (st === 'dash') { hx = S.sx - 4; hy = S.sy - 5; ang = 180; }
+      else {
+        const a = p.aim || 0, c = Math.cos(a), s = Math.sin(a);
+        hx = S.sx + c * 6.5; hy = S.sy + s * 6.5 - 1; ang = a / DEG;
+        if (p.recoil > 0) { hx -= c * p.recoil * 3; hy -= s * p.recoil * 3; }
+      }
       len = 14 * ext;
-      break;
-    case 'shield': {
-      const s = p.shieldAmt || 0;
-      hx = lerp(S.sx + 4, S.sx + 8, s); hy = lerp(S.sy - 7, S.sy - 1, s);
-      if (st === 'dash') { hx = S.sx - 3; hy = S.sy - 4; }
-      ang = 0; len = lerp(9, 17, s) * ext;
-      break;
     }
-    default: // blink
-      if (p.warpU > 0) { hx = S.sx + 11; hy = S.sy - 2; ang = 4; len = 9; }
-      else if (st === 'run' || st === 'dash') { hx = S.sx - 2; hy = S.sy - 7; ang = 170; len = 8; }
-      else { hx = S.sx + 6; hy = S.sy - 7; ang = 25; len = 8; }
-      len *= ext;
   }
   W.hx = hx; W.hy = hy; W.ang = ang; W.len = len;
   return W;
@@ -254,19 +242,22 @@ function drawPlayer(p, ox, oy, ov) {
     if (!OV) { line(_ox + sc[0], _oy + sc[1] - 1, _ox + sc[4], _oy + sc[5] - 1, 1, PAL.mg2); }
   }
 
-  /* ---- blink thrusters (behind the legs) ---- */
+  /* ---- blink thrusters live on the legs (LEGS slot) ---- */
   const air = p.anim === 'jump' || p.anim === 'fall' || p.anim === 'dash';
-  const thrust = p.chip === 'blink' ? (p.warpU > 0 ? 1 : air ? 0.7 : p.anim === 'run' ? 0.35 : 0.15) * clamp(p.xf === undefined ? 1 : p.xf, 0, 1) : 0;
+  const AB = ACCENT.blink, AS = ACCENT.shield;
+  const thrust = p.hasBlink ? (p.warpU > 0 ? 1 : air ? 0.7 : p.anim === 'run' ? 0.35 : 0.15) : 0;
 
-  /* ---- back arm + back leg (darker, behind torso) ---- */
-  ik2(Q.sx - 1, Q.sy, Q.bhx, Q.bhy, 5, 5, -1);
-  limb(Q.sx - 1, Q.sy, KN.x, KN.y, Q.bhx, Q.bhy, 3, 3, PAL.s0, OLn, null);
-  D(Q.bhx, Q.bhy, 1, PAL.s2);
+  /* ---- back arm (L-ARM slot: raises the shield) + back leg ---- */
+  const sh = p.hasShield ? (p.shieldAmt || 0) : 0;
+  const bhx = lerp(Q.bhx, Q.sx + 8, sh), bhy = lerp(Q.bhy, Q.sy - 1, sh);
+  ik2(Q.sx - 1, Q.sy, bhx, bhy, 5, 5, -1);
+  limb(Q.sx - 1, Q.sy, KN.x, KN.y, bhx, bhy, 3, 3, PAL.s0, OLn, null);
+  D(bhx, bhy, 1, p.hasShield ? AS.m : PAL.s2);
 
   ik2(-1, hipH, Q.bfx, Q.bfy + 1, 8, 8, 1);
   limb(-1, hipH, KN.x, KN.y, Q.bfx, Q.bfy + 1, 5, 3, PAL.s0, OLn, null);
   L(Q.bfx - 2, Q.bfy + 1, Q.bfx + 3, Q.bfy + 1, 3, OLn); L(Q.bfx - 1, Q.bfy + 1, Q.bfx + 3, Q.bfy + 1, 1, PAL.s0);
-  if (thrust > 0) thrusterFx(Q.bfx, Q.bfy, thrust, A, p);
+  if (thrust > 0) thrusterFx(Q.bfx, Q.bfy, thrust, AB, p);
 
   /* ---- torso ---- */
   L(0, hipH - 1, lean, hipH + 9, 11, OLn);
@@ -303,12 +294,15 @@ function drawPlayer(p, ox, oy, ov) {
   L(Q.ffx - 2, Q.ffy + 1, Q.ffx + 4, Q.ffy + 1, 5, OLn);
   L(Q.ffx - 1, Q.ffy + 1, Q.ffx + 4, Q.ffy + 1, 3, flash ? PAL.wh : PAL.s0);
   L(Q.ffx - 1, Q.ffy, Q.ffx + 4, Q.ffy, 1, A.m);                               // glowing sole
-  if (thrust > 0) thrusterFx(Q.ffx, Q.ffy, thrust, A, p);
+  if (thrust > 0) thrusterFx(Q.ffx, Q.ffy, thrust, AB, p);
+
+  /* ---- hard-light shield projected by the far arm (drawn in front of the body) ---- */
+  if (sh > 0.05) drawShield(bhx, bhy, lerp(9, 17, sh) * (0.4 + 0.6 * sh), p, AS);
 
   /* ---- weapon arm (front) ---- */
   const w = weaponArm(p);
   ik2(Q.sx, Q.sy, w.hx, w.hy, 5.5, 5.5, -1);
-  if (p.chip === 'cannon' || p.chip === 'shield') {
+  if (p.chip === 'cannon') {
     limb(Q.sx, Q.sy, KN.x, KN.y, w.hx, w.hy, 5, 5, SU, OLn, PAL.s3);
   } else {
     limb(Q.sx, Q.sy, KN.x, KN.y, w.hx, w.hy, 5, 5, SU, OLn, PAL.s3);
@@ -318,14 +312,7 @@ function drawPlayer(p, ox, oy, ov) {
   L(Q.sx - 1, Q.sy + 2, Q.sx + 1, Q.sy + 2, 1, PAL.p1);
 
   if (p.chip === 'blade') drawBlade(w.hx, w.hy, w.ang, w.len, A, p);
-  else if (p.chip === 'cannon') drawCannon(w.hx, w.hy, w.ang, w.len, A, p);
-  else if (p.chip === 'shield') drawShield(w.hx, w.hy, w.len, p, A);
-  else if (w.len > 1) {                                                        // blink kunai
-    const a = w.ang * DEG, dx = Math.cos(a), dy = Math.sin(a);
-    L(w.hx, w.hy, w.hx + dx * (w.len + 2), w.hy + dy * (w.len + 2), 3, A.d);
-    L(w.hx, w.hy, w.hx + dx * (w.len + 3), w.hy + dy * (w.len + 3), 1, A.l);
-    GL(w.hx + dx * 4, w.hy + dy * 4, A.m, 6, 0.35);
-  }
+  else drawCannon(w.hx, w.hy, w.ang, w.len, A, p);
   D(w.hx, w.hy, 1, flash ? PAL.wh : A.m);                                      // glowing hand
 
   /* ---- transformation flash on the changed limb ---- */
@@ -333,7 +320,6 @@ function drawPlayer(p, ox, oy, ov) {
     const k = 1 - p.xf;
     T(w.hx, w.hy); disc(TX, TY, 3 + 7 * k | 0, mix(A.m, PAL.wh, k));
     glow(TX, TY, A.l, 20, k);
-    if (p.chip === 'blink') { T(Q.ffx, Q.ffy); glow(TX, TY, A.l, 16, k); T(Q.bfx, Q.bfy); glow(TX, TY, A.l, 16, k); }
   }
   g.globalAlpha = prevAlpha;
   OV = null; _rotOn = false;

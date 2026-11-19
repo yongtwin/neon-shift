@@ -5,11 +5,11 @@
    ===================================================================== */
 const STORAGE = 'neonshift_chips_v1';       // same key as v0.3 so existing unlocks carry over
 const CHIP_ORDER = ['blade', 'cannon', 'shield', 'blink'];
-const CHIP_INFO = {
-  blade:  { id: 'blade',  name: 'BLADE',  sub: 'MELEE · COMBO', cool: 0.22 },
-  cannon: { id: 'cannon', name: 'CANNON', sub: 'RANGED · PLASMA',     cool: 0.30 },
-  shield: { id: 'shield', name: 'SHIELD', sub: 'HOLD · TAP TO PARRY', cool: 0.55 },
-  blink:  { id: 'blink',  name: 'BLINK',  sub: 'WARP · SLASH',        cool: 1.60 },
+const CHIP_INFO = {   // slot = which body part the chip rewrites; key = the button that fires it
+  blade:  { id: 'blade',  name: 'BLADE',  slot: 'R-ARM', key: 'J', sub: 'COMBO · DEFLECTS',  cool: 0.22 },
+  cannon: { id: 'cannon', name: 'CANNON', slot: 'R-ARM', key: 'J', sub: 'AUTO-AIM · I / S',   cool: 0.30 },
+  shield: { id: 'shield', name: 'SHIELD', slot: 'L-ARM', key: 'L', sub: 'HOLD · TAP = PARRY', cool: 0.55 },
+  blink:  { id: 'blink',  name: 'BLINK',  slot: 'LEGS',  key: 'K', sub: 'WARP · SLASH',       cool: 1.60 },
 };
 
 const WORLD_W = 145;

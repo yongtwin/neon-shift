@@ -1,4 +1,4 @@
-# NEON//SHIFT — v0.4 "Combat Feel"
+# NEON//SHIFT — v0.5 "Body Slots"
 
 Cyberpunk chip-runner prototype. This build keeps the v0.3 level and movement and adds
 impactful combat, a redrawn pixel-art ninja with visible chip transformations, readable enemy AI,
@@ -16,20 +16,40 @@ After editing anything in `js/` or `css/`, run `node build.mjs` to regenerate `N
 
 Desktop Chrome / Edge. Touch buttons appear automatically on touch devices (or add `?touch` to the URL).
 
-## Controls
+## Controls (keyboard or gamepad — no mouse)
 
-| Action | Keys |
-|---|---|
-| Move | `A` `D` / arrows |
-| Jump (×2) | `W` / `Space` / `↑` |
-| Dash (i-frames) | `Shift` |
-| Attack / fire / warp | `J` / `K` / mouse click (hold to repeat) |
-| Shield | hold `J` — **tap it just before a hit to parry** |
-| Swap chip | `1`–`4`, `Q` / `E`, or click the chip cards |
-| Restart / pause / mute | `R` / `P` or `Esc` / `M` |
-| Debug / hitboxes | `F3` / `F4` |
+Every chip rewrites one **body slot** and has **its own button**, so slots work together and only the
+R-ARM weapon is ever swapped.
 
-## What changed from v0.3
+| Action | Keyboard | Gamepad |
+|---|---|---|
+| Move / jump ×2 / dash | `A` `D` · `W` or `Space` · `Shift` | left stick · A · B |
+| **R-ARM** attack (Blade combo or Cannon) | `J` (hold to repeat) | X / RT |
+| Swap Blade ⇄ Cannon | `Q` (or `1` / `2`) | RB |
+| Cannon aim | auto-locks the nearest enemy ahead · hold `I` up / `S` down (`↑` `↓` too) | right stick, or left stick up/down |
+| **L-ARM** Shield | hold `L` — tap just before a hit to **PARRY** | LT / LB |
+| **LEGS** Blink | `K` (or `E`) | Y |
+| Sword deflect | swing the Blade into an incoming bolt | — |
+| Restart / pause / mute / music | `R` / `P` or `Esc` / `M` / `N` | — |
+| Debug / hitboxes | `F3` / `F4` | — |
+
+## What changed in v0.5
+
+- **Body-slot chips:** Shield (L-ARM) and Blink (LEGS) are always on their own buttons once collected, so you
+  can guard, warp and attack at the same time. Only the weapon arm swaps, with one key (`Q`). The HUD shows
+  the three slots with their buttons. A shield card lights up while raised. Picking up Shield/Blink no longer
+  changes your weapon.
+- **Sword deflect:** a blade swing that meets an enemy bolt sends it back at the shooter for 3 damage
+  (4 on the finisher), with hit-stop and a `DEFLECT!` pop. Shield parries also now home back to the shooter.
+- **Aimed cannon:** the arm rotates to the aim angle and bolts fly diagonally. Default auto-aim locks the
+  closest enemy ahead (lock-on brackets + dotted sight line), so you can shoot down from catwalks; hold
+  `I` / `S` for manual 8-way aim, or use the gamepad right stick.
+- **Keyboard / gamepad only:** mouse input removed so the hands stay on the controls.
+- **Procedural EDM soundtrack:** 128 BPM, A minor, kick + sidechain-pumped bass, off-beat hats, claps,
+  pads and a gated arpeggio, 4-bar intro build into the drop. Synthesised live, no audio files. `N` toggles it.
+- **Contextual hints:** a bottom-of-screen line explains each new slot the moment you pick it up.
+
+## What changed in v0.4 (from v0.3)
 
 **Combat feel**
 - **Hit-stop** (50 / 55 / 85 ms for the 3 blade hits, 100–140 ms on kills). It freezes the simulation only; the loop, camera shake and HUD keep running, and key presses made during the freeze are buffered.
