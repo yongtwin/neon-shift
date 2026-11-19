@@ -1,0 +1,21 @@
+{
+  "name": "neon-shift",
+  "version": "0.7.0",
+  "private": true,
+  "type": "module",
+  "description": "NEON//SHIFT — 2D cyberpunk ninja action platformer (Three.js compositor + pixel-art canvas)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1",
+    "vite": "6.0.7"
+  }
+}
