@@ -15,8 +15,10 @@ body.gl-on #crt{display:none}
 
 /* ---------------------------------------------------------------- HUD */
 #hud{position:absolute;z-index:5;top:0;left:0;right:0;padding:10px 12px;pointer-events:none;display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-.hud-left,.hud-right{background:linear-gradient(180deg,#050a18e6,#050a18c8);border:1px solid #2a3f63;box-shadow:0 4px 18px #0008,inset 0 1px 0 #ffffff10;padding:9px 12px;backdrop-filter:blur(3px);clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
-.hud-left{display:flex;flex-direction:column;gap:8px}
+.hud-left,.hud-right{background:linear-gradient(180deg,#050a18b8,#050a1870);border:1px solid #2a3f6399;box-shadow:0 4px 18px #0008,inset 0 1px 0 #ffffff10;padding:9px 12px;backdrop-filter:blur(3px);clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
+.hud-left{display:flex;flex-direction:column;gap:6px}
+.stage-tag{display:flex;flex-direction:column;align-items:flex-end;margin-bottom:3px;padding-bottom:4px;border-bottom:1px solid #2a3f63}
+.stage-tag span{font-size:10px;letter-spacing:3px;color:var(--pink);font-weight:800}.stage-tag b{font-size:14px;letter-spacing:3px;color:#fff;text-shadow:0 0 10px #2fe6ff88}
 .brand{font-size:14px;letter-spacing:5px;font-weight:900;color:#fff;text-shadow:0 0 10px #2fe6ff99;white-space:nowrap}
 .brand i{font-style:normal;color:var(--pink);margin:0 1px}
 .tiny{font-size:11px;letter-spacing:2px;color:#a9bcdc;font-weight:700}
@@ -38,9 +40,9 @@ body.gl-on #crt{display:none}
 .slot-row{display:flex;gap:4px}
 .chip.armed{border-color:color-mix(in srgb,var(--c) 55%,#2c4560);color:#d8e6f5}.chip.armed .ico{filter:none}
 .chip.live{border-color:var(--c);background:linear-gradient(180deg,color-mix(in srgb,var(--c) 30%,#0a1a2c),#0a1a2c);box-shadow:0 0 18px color-mix(in srgb,var(--c) 55%,transparent);color:#fff}
-.chip{position:relative;overflow:hidden;width:124px;display:grid;grid-template-columns:34px 1fr;align-items:center;gap:7px;text-align:left;background:#0a1426;border:1px solid #34507a;padding:6px 8px 6px 6px;border-radius:3px;color:#8fa6c2;transition:background .12s,border-color .12s,transform .12s,box-shadow .12s;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
+.chip{position:relative;overflow:hidden;width:112px;display:grid;grid-template-columns:28px 1fr;align-items:center;gap:6px;text-align:left;background:#0a1426cc;border:1px solid #34507a;padding:6px 8px 6px 6px;border-radius:3px;color:#8fa6c2;transition:background .12s,border-color .12s,transform .12s,box-shadow .12s;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
 
-.chip .ico{width:34px;height:34px;image-rendering:pixelated;display:block;filter:saturate(.6) brightness(.8)}
+.chip .ico{width:28px;height:28px;image-rendering:pixelated;display:block;filter:saturate(.6) brightness(.8)}
 .chip .name{display:block;font-weight:900;font-size:12px;letter-spacing:1.5px}
 .chip .sub{display:block;font-size:10px;color:#93a9c6;letter-spacing:.4px;margin-top:2px}
 .chip .key{position:absolute;top:3px;right:12px;color:#9ab0cc;font-size:11px;font-weight:700}
@@ -104,8 +106,24 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;margin-right:3px;text-al
 .secondary{background:#1d354b;border:1px solid #487089;box-shadow:none;color:#caecfc;margin-left:10px}.secondary:hover{box-shadow:none;background:#26455f}
 .footer-note{margin-top:18px;font-size:10px;color:#8ba1b9;line-height:1.7}
 
+/* ---------------------------------------------------------------- title screen (finished-game look) */
+#overlay[data-mode=title]{background:linear-gradient(90deg,#020510f2 0%,#020510c8 38%,#0205104d 70%,#02051000 100%),linear-gradient(0deg,#020510cc,#02051000 30%);backdrop-filter:none;justify-content:flex-start;padding-left:clamp(20px,6vw,90px)}
+#overlay[data-mode=title] .panel{width:min(760px,96vw);background:none;border:none;box-shadow:none;clip-path:none;padding:0}
+#overlay[data-mode=title] .panel:before{display:none}
+#overlay[data-mode=title] h1{font-size:clamp(48px,10vw,118px);letter-spacing:-3px;margin:8px 0 6px;color:#f4ffff;
+  text-shadow:-3px 0 0 #ff3d9dcc,3px 0 0 #2fe6ffcc,0 0 28px #2fe6ff88,0 0 60px #ff3d9d44;animation:logoFlicker 4.5s steps(1) infinite}
+#overlay[data-mode=title] h1 span{color:var(--pink);text-shadow:0 0 18px #ff3d9d}
+#overlay[data-mode=title] .eyebrow{font-size:12px;letter-spacing:6px}
+#overlay[data-mode=title] .lead{font-size:14px;letter-spacing:3px;color:#d8e4ff}
+#overlay[data-mode=title] .desc,#overlay[data-mode=title] .controls{max-width:560px}
+#overlay[data-mode=title] .controls{background:#050a18b0;border:1px solid #2a3f63;padding:10px 12px}
+#overlay[data-mode=title] #hero{position:fixed;right:9vw;bottom:14vh;width:288px;height:336px;filter:drop-shadow(0 0 22px #2fe6ff66);pointer-events:none}
+#overlay[data-mode=title] .btn{font-size:15px;padding:14px 28px;animation:btnPulse 1.6s ease-in-out infinite}
+@keyframes logoFlicker{0%,100%{opacity:1}92%{opacity:1}93%{opacity:.55;transform:translateX(2px)}94%{opacity:1;transform:none}96%{opacity:.8}}
+@keyframes btnPulse{50%{box-shadow:5px 5px 0 #146b80,0 0 22px #2fe6ff99}}
+
 @media (max-width:760px){
   #hud{padding:6px 8px}.hud-left,.hud-right{padding:6px 8px}.chip{width:84px;grid-template-columns:24px 1fr;padding:5px;gap:5px}.chip .ico{width:24px;height:24px}.chip .sub{display:none}.chip .name{font-size:10px;letter-spacing:.5px}
-  .brand{font-size:11px;letter-spacing:3px}.stat{font-size:10px}.stat b{font-size:12px}.tiny,.slot-label{font-size:10px}#hint{display:none}.controls{grid-template-columns:1fr}#hero{width:72px;height:84px}
+  .brand{font-size:11px;letter-spacing:3px}.stat{font-size:10px}.stat b{font-size:12px}.tiny,.slot-label{font-size:10px}#hint{display:none}.controls{grid-template-columns:1fr}#hero,#overlay[data-mode=title] #hero{width:108px;height:126px}
 }
 @media (max-height:560px){#hud{padding:6px 10px}#hint{display:none}.panel .desc{margin:10px 0}.controls{display:none}}

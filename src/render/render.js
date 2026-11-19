@@ -380,6 +380,7 @@ export function drawEnemyEntity(e) {
   const X = sx(ex) + (e.shake > 0 ? ((Math.random() * 3) | 0) - 1 : 0), Y = sy(ey);
   if (X < -60 || X > view.W + 60) return;
   if (e.kind !== 'drone') drawShadow(ex, ey, e.kind === 'warden' ? 30 : e.kind === 'turret' ? 20 : 18);
+  if (e.kind === 'warden' && (e.anim === 'charge' || (e.anim === 'windup' && e.attack === 'charge'))) drawChargeLine(e, X, Y);
   drawEnemy(e, X, Y);
   const top = Y - (ENEMY_HEIGHT[e.kind] || 44);
   if (e.state === 'alert' && e.st < 0.45) {                                     // "!" reaction indicator
@@ -396,18 +397,44 @@ export function drawEnemyEntity(e) {
   }
 }
 
+/* boss charge telegraph: a scrolling red danger lane along the floor ahead of the Warden */
+function drawChargeLine(e, X, Y) {
+  const f = e.facing || 1, tm = Game.time, k = Math.max(0.35, Math.min(1, e.tele || 0.6));
+  const len = Math.round(80 + 240 * k), x0 = X + f * 26, gy = sy(0);
+  g.globalAlpha = 0.16 + 0.12 * k; R(f > 0 ? x0 : x0 - len, gy - 3, len, 3, '#ff3b4a'); g.globalAlpha = 1;
+  const scroll = (tm * 90) % 12;
+  for (let d = 0; d < len; d += 12) {
+    const xx = x0 + f * (d + scroll); if ((d / 12) % 2) continue;
+    R(f > 0 ? xx : xx - 6, gy - 2, 6, 1, '#ff5a4a');
+    px(xx + f * 2, gy - 5, '#ff8a6a'); px(xx + f * 3, gy - 4, '#ff8a6a'); px(xx + f * 2, gy - 3, '#ff8a6a');   // chevrons
+  }
+  if (((tm * 12) | 0) % 2) glow(x0 + f * len, gy - 3, '#ff3b4a', 10, 0.8);
+  void Y;
+}
+/* boss slam shockwave: a travelling wall of orange energy with ground sparks */
+function drawShockwave(b, X) {
+  const d = Math.sign(b.vx) || 1, tm = Game.time, gy = sy(0), fl = ((tm * 30) | 0) % 2;
+  for (let i = 0; i < 6; i++) {                                         // trailing afterimage columns
+    const h = 22 - i * 3, xx = X - d * i * 4;
+    g.globalAlpha = 0.85 - i * 0.14;
+    R(xx - 1, gy - h, 3, h, i === 0 ? '#ffffff' : i < 3 ? '#ffb347' : '#ff3b4a');
+  }
+  g.globalAlpha = 1;
+  R(X - 2 + d, gy - 24 - fl, 4, 3, '#fff0c8');                         // crest
+  for (let i = 0; i < 4; i++) px(X - d * (3 + i * 3), gy - 2 - ((i * 5 + fl * 3) % 7), i & 1 ? '#ffe27a' : '#ff7a1a');   // ground sparks
+  R(X - d * 26, gy - 1, 26, 1, '#ff7a1a');
+  glow(X, gy - 10, '#ff7a1a', 18, 0.9); glow(X, gy - 2, '#ff3b4a', 12, 0.7);
+}
+
 export function drawEnemyBullet(b) {
   const X = sx(b.x), Y = sy(b.y);
-  if (b.wave) {                                                         // ground shockwave
-    const f = ((Game.time * 30) | 0) % 2, d = Math.sign(b.vx);
-    for (let i = 0; i < 4; i++) { g.globalAlpha = 1 - i * 0.22; R(X - d * i * 4 - 2, Y - 8 + i * 2 - f, 4, 10 - i * 2, i ? '#ff6a5a' : '#fff0c8'); }
-    g.globalAlpha = 1; glow(X, Y - 4, '#ff3b4a', 14, 0.8);
-    return;
-  }
-  for (let k = 1; k <= 3; k++) { g.globalAlpha = 0.5 / k; R(X - Math.sign(b.vx) * k * 3 - 1, Y - 1, 3, 3, '#ff6a5a'); }
+  if (b.wave) { drawShockwave(b, X); return; }
+  // hostile bolt: dark-ringed hot core + 4-step trail, readable on every theme (red never appears in the backgrounds' key colours)
+  const sp = Math.hypot(b.vx, b.vy || 0) || 1, ux = b.vx / sp, uy = -(b.vy || 0) / sp, pulse = ((Game.time * 20) | 0) % 2;
+  for (let k = 1; k <= 4; k++) { g.globalAlpha = 0.6 / k; R(X - ux * k * 3 - 1, Y - uy * k * 3 - 1, 3, 3, k < 2 ? '#ffb347' : '#ff3b4a'); }
   g.globalAlpha = 1;
-  disc(X, Y, 3, '#0a0508'); disc(X, Y, 2, '#ff3b4a'); px(X, Y, '#fff0c8'); px(X - 1, Y - 1, '#ffb347');
-  glow(X, Y, '#ff3b4a', 11, 0.8);
+  disc(X, Y, 4, '#0a0508'); disc(X, Y, 3, '#ff3b4a'); disc(X, Y, 1 + pulse, '#fff0c8'); px(X - 1, Y - 1, '#ffffff');
+  glow(X, Y, '#ff3b4a', 13, 0.9);
 }
 export function drawPlayerBullet(b) {                                       // drawn along its flight direction
   const X = sx(b.x), Y = sy(b.y), sp = Math.hypot(b.vx, b.vy || 0) || 1, ux = b.vx / sp, uy = -(b.vy || 0) / sp, refl = b.reflected;
@@ -491,6 +518,7 @@ export function renderFrame() {
   }
   FX.drawScreenFlash(view.W, view.H);
   HUD.setGuard(player.guard, player.guardMax, player.guardBreakT > 0);
+  HUD.setStage((Game.stage || 0) + 1, (S.stage && S.stage.name) || TH.name);
   present();
 }
 

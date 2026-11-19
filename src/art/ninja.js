@@ -657,14 +657,20 @@ export function drawNinja(ctx, pose, x, y, ov) {
     }
   }
   ctx.restore();
-  // transformation flash on the weapon hand (live, short)
+  // transformation flash (live, ~0.28 s): accent silhouette pop + shockring + 4 rays at the weapon forearm
   if (pose.xf !== undefined && pose.xf < 1 && !ov) {
     const k = 1 - pose.xf, A = NINJA_ACCENT[pose.chip === 'cannon' ? 'cannon' : 'blade'];
-    const hx = x + f * 9, hy = y - 26;
-    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = prevA * k;
-    const r = 3 + Math.round(9 * k);
-    ctx.drawImage(glowSprite(A.l, 20), hx - 20, hy - 20);
-    ctx.fillStyle = A.l; ctx.fillRect(hx - r, hy, r * 2 + 1, 1); ctx.fillRect(hx, hy - r, 1, r * 2 + 1);
+    if (k > 0.45) drawNinja(ctx, Object.assign({}, pose, { xf: 1, scarf: null }), x, y, { fill: A.l, alpha: (k - 0.45) * 1.6 });
+    const sh = ninjaAnchors(pose).shoulder, hx = x + f * Math.round(sh.x + 7), hy = y - Math.round(sh.y - 5);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = prevA * k; ctx.drawImage(glowSprite(A.m, 24), hx - 24, hy - 24);
+    ctx.globalAlpha = prevA * Math.min(1, k * 1.5);
+    const rr = Math.round(4 + 16 * (1 - k)), n = 28;                 // expanding pixel ring
+    ctx.fillStyle = A.l;
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; ctx.fillRect(Math.round(hx + Math.cos(a) * rr), Math.round(hy + Math.sin(a) * rr), 1, 1); }
+    const r = Math.round(4 + 12 * k);
+    ctx.fillRect(hx - r, hy, r * 2 + 1, 1); ctx.fillRect(hx, hy - r, 1, r * 2 + 1);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(hx - 1, hy - 1, 3, 3);
     ctx.restore();
   }
   ctx.globalAlpha = prevA;

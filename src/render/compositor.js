@@ -159,7 +159,7 @@ export const Compositor = {
       // 3. final
       const flash = fx ? Math.max(fx.flash || 0, fx.hit || 0) : 0;
       G.quad.material = G.mFinal;
-      G.mFinal.uniforms.uCA.value = Math.min(2.5, flash * 3.5) + this.settings.ca;
+      G.mFinal.uniforms.uCA.value = Math.min(1.5, flash * 2) + this.settings.ca;
       G.mFinal.uniforms.uBloom.value = this.settings.bloom * (1 + 0.6 * Math.min(1, flash));
       r.setRenderTarget(null); r.render(G.scene, G.cam);
     } catch (err) {

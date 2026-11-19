@@ -211,24 +211,28 @@ function drawShafts(view, tm) {                          // cold light shafts fr
     R(X, 0, 14, 2, '#eafcff'); glow(X + 7, 2, '#bff6ff', 14, 0.5 * flick);
   }
 }
-function drawCorePulse(view, tm) {
-  const X = Math.round(view.W * 0.62 - view.cpx * 0.05), Y = Math.round(view.gy * 0.42), p = 0.5 + 0.5 * Math.sin(tm * 2.2);
-  glow(X, Y, '#19ff9c', 70, 0.25 + 0.15 * p); glow(X, Y, '#2fe6ff', 40, 0.35 + 0.2 * p);
-  disc(X, Y, 15, '#04150f'); disc(X, Y, 12, '#0a3a28'); disc(X, Y, 8 + Math.round(p * 2), '#19ff9c'); disc(X, Y, 4, '#d8fff0');
+function drawCorePulse(view, tm) {                       // the Cyber Core itself: a huge reactor sphere behind the racks
+  const X = Math.round(view.W * 0.55 - view.cpx * 0.04), Y = Math.round(view.gy * 0.36), p = 0.5 + 0.5 * Math.sin(tm * 2.2);
+  // energy pillar from floor to ceiling
+  g.globalAlpha = 0.18 + 0.1 * p; R(X - 6, 0, 13, view.gy, '#19ff9c'); g.globalAlpha = 0.35; R(X - 1, 0, 3, view.gy, '#c8ffe8'); g.globalAlpha = 1;
+  glow(X, Y, '#19ff9c', 90, 0.35 + 0.2 * p); glow(X, Y, '#2fe6ff', 52, 0.45 + 0.25 * p);
+  disc(X, Y, 30, '#03140d'); disc(X, Y, 28, '#0a3a28'); disc(X, Y, 24, '#0f5a3c');
+  for (let yy = -22; yy <= 22; yy += 4) { const hw = Math.round(Math.sqrt(Math.max(0, 22 * 22 - yy * yy))); R(X - hw, Y + yy, hw * 2, 1, '#127a50'); }
+  disc(X, Y, 13 + Math.round(p * 3), '#19ff9c'); disc(X, Y, 9, '#8affc8'); disc(X, Y, 5, '#f0fff8');
   for (let k = 0; k < 3; k++) {                           // orbit rings
-    const a = tm * (0.6 + k * 0.35) + k * 2, rr = 20 + k * 7;
-    for (let i = 0; i < 24; i++) { const b = a + i / 24 * Math.PI * 2; if (i % 3 === 0) px(X + Math.cos(b) * rr, Y + Math.sin(b) * rr * 0.45, k === 1 ? '#2fe6ff' : '#19ff9c'); }
+    const a = tm * (0.6 + k * 0.35) + k * 2, rr = 36 + k * 9;
+    for (let i = 0; i < 40; i++) { const b = a + i / 40 * Math.PI * 2; if (i % 2 === 0) px(X + Math.cos(b) * rr, Y + Math.sin(b) * rr * 0.38, k === 1 ? '#2fe6ff' : '#19ff9c'); }
   }
 }
-function drawDataStreams(view, tm) {
-  for (let i = 0; i < 34; i++) {
+function drawDataStreams(view, tm, layer = 0) {
+  for (let i = layer; i < 44; i += 2) {
     const sd = (i * 7919) % 1000 / 1000, sd2 = (i * 104729) % 1000 / 1000, par = 0.15 + sd * 0.4;
     const X = Math.round(((sd2 * (view.W + 40) - view.cpx * par) % (view.W + 40) + view.W + 40) % (view.W + 40)) - 20;
     const head = Math.round((sd * view.H + tm * (30 + sd * 50)) % (view.H + 60)) - 30;
     const col = i % 3 ? '#19ff9c' : '#2fe6ff';
     for (let k = 0; k < 9; k++) {
       const y = head - k * 4; if (y < 0 || y > view.gy + 30) continue;
-      g.globalAlpha = (1 - k / 9) * (0.25 + par);
+      g.globalAlpha = (1 - k / 9) * (0.45 + par);
       R(X, y, 1, 2, k === 0 ? '#e8fff6' : col);
     }
   }
@@ -270,10 +274,10 @@ export const THEMES = {
     sky: coreSky,
     layers: () => [
       buildRacks({ seed: 17, w: 640, h: 240, par: 0.12, dy: -24, hMin: 60, hMax: 170, wMin: 20, wMax: 36, body: '#06110d', edge: '#12352a', leds: 0.08, led: '#19ff9c', fog: '#03140e', fogA: 0.6, bottom: '#020a07' }),
-      buildRacks({ seed: 31, w: 600, h: 190, par: 0.3, dy: 0, hMin: 70, hMax: 180, wMin: 18, wMax: 30, body: '#071510', edge: '#164036', leds: 0.12, led: '#2fe6ff', fog: '#021009', fogA: 0.5, bottom: '#020805' }),
-      buildRacks({ seed: 47, w: 560, h: 150, par: 0.52, dy: 20, hMin: 40, hMax: 130, wMin: 16, wMax: 28, body: '#050e0b', edge: '#1a4a3c', leds: 0.15, led: '#19ff9c', fog: '#010805', fogA: 0.45, bottom: '#010604' }),
+      buildRacks({ seed: 31, w: 600, h: 190, par: 0.3, dy: 0, hMin: 40, hMax: 120, wMin: 18, wMax: 30, body: '#071510', edge: '#164036', leds: 0.12, led: '#2fe6ff', fog: '#021009', fogA: 0.5, bottom: '#020805' }),
+      buildRacks({ seed: 47, w: 560, h: 150, par: 0.52, dy: 20, hMin: 26, hMax: 80, wMin: 16, wMax: 28, body: '#050e0b', edge: '#1a4a3c', leds: 0.15, led: '#19ff9c', fog: '#010805', fogA: 0.45, bottom: '#010604' }),
     ],
-    ambient: (view, tm, i) => { if (i === 1) drawCorePulse(view, tm); if (i === 2) drawDataStreams(view, tm); },
+    ambient: (view, tm, i) => { if (i === 1) { drawCorePulse(view, tm); drawDataStreams(view, tm, 0); } if (i === 2) drawDataStreams(view, tm, 1); },
     overlay: null,
     plat: { top: '#19ff9c', top2: '#0f8a5a', top3: '#c8ffe8', base: '#030a08', tiles: ['#06110d', '#071410', '#050f0b', '#06130f'], seamL: '#0f2e22', seamD: '#010403', rivet: '#1f5a44',
       hazard: '#19ff9c', conduit: ['#19ff9c', '#2fe6ff'], pipe: '#08201a', pipeL: '#1a4a3c', screen: '#19ff9c', glow: '#19ff9c', lamp: '#2fe6ff' },

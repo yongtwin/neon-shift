@@ -2,12 +2,13 @@
 import { drawEnemyArt } from '../src/art/enemy-art.js';
 import { drawNinja } from '../src/art/ninja.js';
 
-const CW = 80, CH = 92, FEET = 80;
+const CW = 120, CH = 140, FEET = 128;
 const E = (kind, anim, o = {}) => Object.assign({ kind, anim, facing: -1, t: 0, walk: 0, tele: 0, muzzle: 0, recoil: 0, flash: 0 }, o);
 const ROWS = [
   ['gunner', [E('gunner', 'idle'), E('gunner', 'walk', { walk: 0 }), E('gunner', 'walk', { walk: 1.6 }), E('gunner', 'alert'), E('gunner', 'windup', { tele: 0.4 }), E('gunner', 'windup', { tele: 1 }), E('gunner', 'fire', { muzzle: 0.1, recoil: 1 }), E('gunner', 'hit', { flash: 0.1 }), E('gunner', 'dead', { deadU: 0.2 }), E('gunner', 'dead', { deadU: 1 })]],
   ['enforcer', [E('enforcer', 'idle'), E('enforcer', 'walk', { walk: 0 }), E('enforcer', 'chase', { walk: 1.6 }), E('enforcer', 'windup', { tele: 0.5 }), E('enforcer', 'windup', { tele: 1, t: 0.08 }), E('enforcer', 'lunge'), E('enforcer', 'recover'), E('enforcer', 'hit', { flash: 0.1 }), E('enforcer', 'stagger'), E('enforcer', 'dead', { deadU: 1 })]],
-  ['warden', [E('warden', 'idle'), E('warden', 'walk', { walk: 1 }), E('warden', 'windup', { tele: 0.8, attack: 'bolt' }), E('warden', 'fire', { muzzle: 0.1, recoil: 1 }), E('warden', 'windup', { tele: 0.9, attack: 'slam' }), E('warden', 'windup', { tele: 0.9, attack: 'charge' }), E('warden', 'idle', { phase2: true, t: 0.08 }), E('warden', 'hit', { flash: 0.1 }), E('warden', 'dead', { deadU: 1 })]],
+  ['warden', [E('warden', 'idle'), E('warden', 'windup', { tele: 0.8, attack: 'bolt' }), E('warden', 'fire', { muzzle: 0.1, recoil: 1 }), E('warden', 'slam', { tele: 0.9 }), E('warden', 'alert', { attack: 'slam', state: 'alert', st: 0.1 }), E('warden', 'charge', { tele: 0.8 }), E('warden', 'stun'), E('warden', 'idle', { exposed: true, phase2: true })]],
+  ['warden dying', [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95].map(u => E('warden', 'dying', { deadU: u }))],
   ['drone / turret', [E('drone', 'idle'), E('drone', 'walk'), E('drone', 'windup', { tele: 1 }), E('drone', 'swoop'), E('drone', 'fire', { muzzle: 0.1, recoil: 1 }), E('drone', 'dead', { deadU: 1 }),
     E('turret', 'idle', { aim: 0.3 }), E('turret', 'windup', { tele: 1, aim: 0 }), E('turret', 'fire', { muzzle: 0.1, recoil: 1, aim: -0.3 }), E('turret', 'idle', { mount: 'ceiling', aim: -0.4 })]],
 ];

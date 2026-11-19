@@ -35,7 +35,8 @@ const T_MH = [C.metal[1], C.metal[2], C.metal[3]];          // light metal (plat
 const T_Y = [C.hazard[0], C.hazard[1], C.hazard[2]];
 const T_K = [C.k, C.metal[0], C.metal[1]];
 
-const BW = 176, BH = 136, OX = 88, OY = 104;
+const BW = 240, BH = 196, OX = 120, OY = 160;
+let SC = 1;                                                  // per-kind draw scale (Warden = boss scale)
 const MAIN = new PixBuf(BW, BH), LAY = new PixBuf(BW, BH);
 const DEG = Math.PI / 180;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -43,11 +44,11 @@ const lerp = (a, b, t) => a + (b - a) * t;
 
 /* local (x fwd, y up) -> buffer, with optional rotation around (PVX, PVY) */
 let ROT = false, RC = 1, RS = 0, PVX = 0, PVY = 0, FLIPY = false;
-function bx(x, y) { if (ROT) { const dx = x - PVX, dy = y - PVY; x = PVX + dx * RC - dy * RS; } return OX + x; }
-function by(x, y) { if (ROT) { const dx = x - PVX, dy = y - PVY; y = PVY + dx * RS + dy * RC; } return FLIPY ? OY + y : OY - y; }
+function bx(x, y) { if (ROT) { const dx = x - PVX, dy = y - PVY; x = PVX + dx * RC - dy * RS; } return OX + x * SC; }
+function by(x, y) { if (ROT) { const dx = x - PVX, dy = y - PVY; y = PVY + dx * RS + dy * RC; } return FLIPY ? OY + y * SC : OY - y * SC; }
 function setRot(a, px = 0, py = 0) { ROT = !!a; RC = Math.cos(a); RS = Math.sin(a); PVX = px; PVY = py; }
-const cap = (x0, y0, x1, y1, r0, r1, T) => capsule(LAY, bx(x0, y0), by(x0, y0), bx(x1, y1), by(x1, y1), r0, r1, T);
-const dsk = (x, y, r, T) => disc(LAY, bx(x, y), by(x, y), r, T);
+const cap = (x0, y0, x1, y1, r0, r1, T) => capsule(LAY, bx(x0, y0), by(x0, y0), bx(x1, y1), by(x1, y1), r0 * SC, r1 * SC, T);
+const dsk = (x, y, r, T) => disc(LAY, bx(x, y), by(x, y), r * SC, T);
 function pol(pts, T, bev) { const o = []; for (let i = 0; i < pts.length; i += 2) o.push(bx(pts[i], pts[i + 1]), by(pts[i], pts[i + 1])); poly(LAY, o, T, bev); }
 const ln = (x0, y0, x1, y1, c) => line(LAY, bx(x0, y0), by(x0, y0), bx(x1, y1), by(x1, y1), c);
 const px1 = (x, y, c) => LAY.set(Math.floor(bx(x, y)), Math.floor(by(x, y)), c);
@@ -79,7 +80,7 @@ function walkFeet(q, stride, lift) {
   if (q.anim === 'windup') return { ff: [5, 0], bf: [-6, 0], bob: -1.5 };
   return { ff: [4, 0], bf: [-4, 0], bob: q.anim === 'idle' || q.anim === 'alert' ? -q.bob : 0 };
 }
-function glowAt(S, x, y, col, r, a) { S.glows.push([bx(x, y), by(x, y), col, r, a]); }
+function glowAt(S, x, y, col, r, a) { S.glows.push([bx(x, y), by(x, y), col, Math.round(r * SC), a]); }
 function optic(S, x, y, len, hot, tele) {                  // horizontal red visor slit
   ln(x - 0.5, y, x + len, y, hot ? C.orange[2] : C.red[1]);
   px1(x + len, y, C.w);
@@ -176,9 +177,10 @@ function enforcer(q, S) {
 function warden(q, S) {
   const { ff, bf, bob } = walkFeet(q, 4, 3);
   const A = q.anim, atk = q.attack, p2 = q.p2, hot = A === 'windup' || A === 'fire';
-  const slamUp = A === 'windup' && atk === 'slam', charge = A === 'windup' && atk === 'charge';
-  let hip = 22 + bob - (charge ? 4 * q.tele : 0) - (slamUp ? 1 : 0);
-  const lean = charge ? 14 : A === 'fire' ? -3 : A === 'hit' ? -4 : slamUp ? -3 : 1;
+  const slamUp = A === 'windup' && atk === 'slam', charge = A === 'windup' && atk === 'charge', impact = q.impact;
+  let hip = 22 + bob - (charge ? 3 + 4 * q.tele : 0) - (slamUp ? 1 : 0) - (impact ? 5 : 0);
+  const lean = charge ? 16 : impact ? 10 : A === 'fire' ? -3 : A === 'hit' ? -4 : slamUp ? -4 : 1;
+  glowAt(S, 0, hip + 12, ENEMY_PAL.red[1], 30, 0.07 + 0.12 * q.tele + (p2 ? 0.06 : 0));   // hostile aura
   const coreC = p2 ? ((q.tf & 1) ? C.orange[2] : C.red[1]) : C.red[1];
   // pillar legs (straight, armoured)
   const leg = (sx, f, back) => {
@@ -191,7 +193,7 @@ function warden(q, S) {
   };
   leg(-3, bf, true); commit();
   // back arm (fist)
-  const backFist = slamUp ? [lean - 4, hip + 34 + q.tele * 3] : charge ? [lean + 8, hip + 6] : [lean - 9, hip + 8];
+  const backFist = slamUp ? [lean - 3, hip + 34 + q.tele * 3] : impact ? [lean + 9, 4] : charge ? [lean + 8, hip + 6] : [lean - 9, hip + 8];
   cap(lean - 6, hip + 19, backFist[0], backFist[1], 3.4, 3, T_MB);
   pol([backFist[0] - 4, backFist[1] - 4, backFist[0] + 4, backFist[1] - 4, backFist[0] + 4.5, backFist[1] + 4, backFist[0] - 4, backFist[1] + 4], T_MB);
   commit();
@@ -215,6 +217,7 @@ function warden(q, S) {
     dsk(lean + 5.5, hip + 12, 4.4, C.orange[0]); dsk(lean + 5.5, hip + 12, 3.4, (q.tf & 1) ? C.w : C.orange[2]); dsk(lean + 5.5, hip + 12, 1.6, C.w);
     glowAt(S, lean + 5.5, hip + 12, '#ffd2a0', 22, 0.9);
   } else { dsk(lean + 5, hip + 12, 3, C.red[0]); dsk(lean + 5, hip + 12, 2, coreC); px1(lean + 5, hip + 12.6, C.w); }
+  if (q.stun && !q.exp) { dsk(lean + 5, hip + 12, 3.2, C.w); glowAt(S, lean + 5, hip + 12, '#ffffff', 16, 0.8); }
   if (p2) for (const vx of [-6, -3]) ln(lean + vx, hip + 14, lean + vx, hip + 19, (q.tf & 1) ? C.orange[1] : C.red[1]);   // overdrive vents
   commit(null);
   glowAt(S, lean + 5, hip + 12, ENEMY_PAL.red[1], p2 ? 16 : 11, 0.6 + q.tele * 0.4);
@@ -229,6 +232,7 @@ function warden(q, S) {
   const kick = q.rec * 4;
   let fx, fy;
   if (slamUp) { fx = lean + 6; fy = hip + 36 + q.tele * 3; }
+  else if (impact) { fx = lean + 15; fy = 4; }
   else if (charge) { fx = lean + 16; fy = hip + 9; }
   else { fx = lean + 14 - kick; fy = hip + 12; }
   const k = ik(lean + 3, hip + 19, fx, fy, 8, 8, -1);
@@ -243,10 +247,13 @@ function warden(q, S) {
   commit();
   S.muzzle = G(11.5, 0);
   if (slamUp) glowAt(S, fx, fy, ENEMY_PAL.orange[1], 12 + Math.round(q.tele * 8), 0.4 + q.tele * 0.6);
-  if (charge) {                                               // red charge-line telegraph along the ground
-    for (let i = 0; i < 40; i += 3) if ((i + (q.tf & 1)) % 6 < 3) { px1(12 + i, 1, C.red[1]); px1(12 + i, 0, C.red[0]); }
+  if (impact) {                                              // ground impact burst under the fists
+    for (let i = -14; i <= 14; i += 2) { const h = 3 + ((i * 7 + q.tf) % 5 + 5) % 5; ln(lean + 12 + i, 0, lean + 12 + i * 1.4, h, (i & 2) ? C.orange[1] : C.hazard[2]); }
+    dsk(lean + 12, 1.5, 4, C.w);
     commit(null);
+    glowAt(S, lean + 12, 2, ENEMY_PAL.orange[1], 22, 1);
   }
+  if (charge) glowAt(S, lean + 6, hip + 8, ENEMY_PAL.red[1], 18, 0.4 + 0.5 * q.tele);
 }
 
 /* ------------------------------------------------------------------ DRONE: flying sentry, swoops */
@@ -320,19 +327,24 @@ function quant(e) {
   let anim = e.anim || 'idle', attack = e.attack || '', tele = e.tele || 0;
   // normalise boss / generic aliases: warden 'slam' | 'charge' are telegraphed attack poses
   if (anim === 'slam' || anim === 'charge') { attack = anim; anim = 'windup'; if (!e.tele) tele = 1; }
-  else if (anim === 'stun') anim = 'stagger';
-  else if (anim === 'dying') anim = 'dead';
-  const deadU = e.deadU !== undefined ? e.deadU : e.deadT !== undefined ? clamp(e.deadT / 0.5, 0, 1) : 1;
+  const stun = anim === 'stun';
+  if (stun) anim = 'stagger';
+  const dying = anim === 'dying';
+  if (dying) anim = 'dead';
+  const deadU = e.deadU !== undefined ? e.deadU : e.dieU !== undefined ? e.dieU : dying && e.st !== undefined ? clamp(e.st / 1.8, 0, 1)
+    : e.deadT !== undefined ? clamp(e.deadT / 0.5, 0, 1) : 1;
+  const impact = e.impact > 0 || (e.kind === 'warden' && attack === 'slam' && e.state === 'alert' && (e.st || 0) < 0.3) ? 1 : 0;
   return {
     kind: e.kind || 'gunner', anim, walk: Math.round(((e.walk || 0) % (Math.PI * 2)) / (Math.PI / 4)) * (Math.PI / 4),
     bob: Math.floor(t * 2) % 2, tf: Math.floor(t * 14) % 6,
     tele: Math.round(clamp(tele, 0, 1) * 5) / 5, mz: e.muzzle > 0 ? 1 : 0, rec: Math.round(clamp(e.recoil || 0, 0, 1) * 3) / 3,
-    flash: e.flash > 0 ? 1 : 0, attack, p2: e.phase2 ? 1 : 0, exp: e.exposed ? 1 : 0,
+    flash: e.flash > 0 ? 1 : 0, attack, p2: e.phase2 ? 1 : 0, exp: e.exposed ? 1 : 0, stun: stun ? 1 : 0, impact,
+    boom: e.kind === 'warden' && anim === 'dead' ? Math.min(7, Math.floor(deadU * 8)) : -1,
     aim: Math.round((e.aim || 0) / (7.5 * DEG)) * 7.5 * DEG, mount: e.mount || 'floor',
     dead: anim === 'dead' ? (deadU < 0.5 ? 1 : 2) : 0,
   };
 }
-const keyOf = q => [q.kind, q.anim, q.walk.toFixed(2), q.bob, q.tf, q.tele, q.mz, q.rec, q.flash, q.attack, q.p2, q.exp, q.aim.toFixed(3), q.mount, q.dead].join('|');
+const keyOf = q => [q.kind, q.anim, q.walk.toFixed(2), q.bob, q.tf, q.tele, q.mz, q.rec, q.flash, q.attack, q.p2, q.exp, q.stun, q.impact, q.boom, q.aim.toFixed(3), q.mount, q.dead].join('|');
 
 function tint(B, r, g, b, k) {
   const d = B.d, u8 = new Uint8Array(d.buffer);
@@ -353,10 +365,39 @@ function rimHalo(B) {
   }
 }
 
+/* boss death: 8 stages — shaking, darkening, chained explosions, final white blast + collapse */
+const BOOMS = [[-6, 30], [8, 18], [-2, 42], [10, 36], [-10, 14], [4, 26], [0, 24]];
+function wardenBoom(q, S) {
+  const k = q.boom;
+  tint(MAIN, 30, 12, 16, Math.min(0.6, k * 0.08));
+  for (let i = 0; i <= Math.min(k, BOOMS.length - 1); i++) {
+    const [x, y] = BOOMS[i], age = k - i, r = (age === 0 ? 4 : age === 1 ? 7 : 5) * SC;
+    const X = OX + x * SC, Y = OY - y * SC;
+    if (age <= 1) { disc(LAY, X, Y, r + 2, C.red[1]); disc(LAY, X, Y, r, C.orange[1]); disc(LAY, X, Y, r * 0.55, age ? C.hazard[2] : C.w); S.glows.push([X, Y, ENEMY_PAL.orange[1], 18 + age * 6, 0.9]); }
+    else { for (let j = 0; j < 7; j++) { const a = j * 0.9 + i; LAY.set(X + Math.cos(a) * (r + age * 2), Y + Math.sin(a) * (r + age * 2), (j & 1) ? rgb('#3a2a2e') : rgb('#5a4048')); } }
+  }
+  if (k >= 7) { disc(LAY, OX, OY - 26 * SC, 22 * SC, rgb('#ffffff', 200)); S.glows.push([OX, OY - 26 * SC, '#ffffff', 50, 1]); }
+  compositeGroup(MAIN, LAY, null);
+}
+
+const RIM2 = rgb('#ff3b2a', 60);
+function rimHalo2(B) {                                         // boss: a second, wider hostile halo ring
+  const w = B.w, h = B.h, d = B.d, add = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x; if (d[i]) continue;
+    const n = d[i + 1] || d[i - 1] || d[i + w] || d[i - w];
+    if (n === RIM_TOP || n === RIM_SIDE) add.push(i);
+  }
+  for (const i of add) d[i] = RIM2;
+}
+
 function buildFrame(q, ov) {
   MAIN.clear(); LAY.clear(); setRot(0); FLIPY = false;
   const S = { glows: [] };
-  const kind = q.kind, D = q.dead;
+  const kind = q.kind;
+  let D = q.dead;
+  SC = kind === 'warden' ? 1.7 : 1;
+  if (q.boom >= 0) D = 0;                                       // the boss has its own explosion sequence
   if (D) {                                                     // death: topple + darken + sparks
     const fall = D === 1 ? 0.35 : kind === 'warden' ? 0.5 : 1.25;
     if (kind !== 'turret') setRot(fall, kind === 'drone' ? 0 : -4, 0);
@@ -375,13 +416,14 @@ function buildFrame(q, ov) {
   if (q.mz && S.muzzle && !D) {
     const [mx, my] = S.muzzle;
     const big = kind === 'warden' ? 1.5 : 1;
-    const X = OX + mx, Y = FLIPY ? OY + my : OY - my;
+    const X = OX + mx * SC, Y = FLIPY ? OY + my * SC : OY - my * SC;
     disc(LAY, X, Y, 3 * big, C.orange[1]); disc(LAY, X, Y, 2 * big, C.w);
     line(LAY, X, Y, X + 8 * big, Y, C.orange[2]);
     compositeGroup(MAIN, LAY, null);
     S.glows.push([X, Y, ENEMY_PAL.orange[1], 14, 0.9]);
   }
-  if (!ov && !D) rimHalo(MAIN);
+  if (q.boom >= 0) wardenBoom(q, S);
+  if (!ov && !D) { rimHalo(MAIN); if (kind === 'warden') rimHalo2(MAIN); }
   if (D) {
     tint(MAIN, 10, 8, 14, D === 2 ? 0.55 : 0.3);
     S.glows = [];
@@ -391,7 +433,7 @@ function buildFrame(q, ov) {
     const c = ov ? rgb(ov.fill) : rgb('#ffffff'), d = MAIN.d;
     for (let i = 0; i < d.length; i++) if (d[i] && (ov || d[i] !== C.ol)) d[i] = c;
   }
-  ROT = false; FLIPY = false;
+  ROT = false; FLIPY = false; SC = 1;
   const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(BW, BH) : Object.assign(document.createElement('canvas'), { width: BW, height: BH });
   toCanvas(MAIN, cv);
   void prevSetRot;
@@ -429,5 +471,5 @@ export function drawEnemyArt(ctx, e, x, y, ov) {
   ctx.globalAlpha = prevA;
 }
 /** visual height in px (for health bars / "!" markers) */
-export const ENEMY_HEIGHT = { gunner: 42, enforcer: 46, warden: 66, drone: 24, turret: 28 };
+export const ENEMY_HEIGHT = { gunner: 42, enforcer: 46, warden: 112, drone: 24, turret: 28 };
 export function enemyCacheSize() { return CACHE.size; }

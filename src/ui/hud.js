@@ -21,6 +21,14 @@ export const HUD = {
     for (let i = 0; i < 3; i++) { const v = document.createElement('i'); gw.appendChild(v); this.gpips.push(v); }
     hp.parentElement.appendChild(gw);
 
+    /* stage label (top of the right panel) */
+    const right = document.querySelector('.hud-right');
+    if (right && !document.getElementById('stage-name')) {
+      const st = document.createElement('div'); st.className = 'stage-tag'; st.id = 'stage-name';
+      st.innerHTML = '<span id="stage-idx">STAGE 1</span><b id="stage-title">NEON DISTRICT</b>';
+      right.prepend(st);
+    }
+
     /* three body slots, each labelled with the button that fires it */
     const bar = $('chipbar');
     const groups = [['R-ARM', ['blade', 'cannon'], 'J'], ['L-ARM', ['shield'], 'L'], ['LEGS', ['blink'], 'K']];
@@ -34,7 +42,7 @@ export const HUD = {
         b.className = 'chip'; b.dataset.chip = id; b.style.setProperty('--c', A.m);
         const img = document.createElement('img');
         img.className = 'ico'; img.alt = ''; img.src = makeChipIcon(id).toDataURL();
-        img.style.width = img.style.height = '32px';
+        img.style.width = img.style.height = '28px';
         const txt = document.createElement('span');
         txt.innerHTML = `<span class="name">${info.name}</span><span class="sub">${info.sub}</span>`;
         const cd = document.createElement('span'); cd.className = 'cd';
@@ -106,6 +114,11 @@ export const HUD = {
       p.classList.toggle('empty', f <= 0); p.classList.toggle('full', f >= 1);
     }
   },
+  setStage(idx, name) {
+    const key = idx + '|' + name; if (this.last.stage === key) return; this.last.stage = key;
+    const i = document.getElementById('stage-idx'), t = document.getElementById('stage-title');
+    if (i) i.textContent = 'STAGE ' + idx; if (t) t.textContent = name;
+  },
   setKills(k, total) { $('killcount').textContent = `${k} / ${total}`; },
   setProgress(pct) { if (this.last.pct !== pct) { this.last.pct = pct; $('progress').textContent = pct + '%'; } },
 
@@ -137,6 +150,7 @@ export const HUD = {
 
   showOverlay(mode, info) {
     const ov = $('overlay'); ov.style.display = 'flex';
+    ov.dataset.mode = mode;
     const set = (id, html) => { $(id).innerHTML = html; };
     if (mode === 'complete') {
       set('ov-eyebrow', '◉ RUN COMPLETE');
