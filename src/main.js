@@ -1,14 +1,16 @@
 import { setGfx } from './art/pixel.js';
-import { CHIP_ORDER, syncSlots } from './chips/chips.js';
+import { CHIPS, CHIP_ORDER, SLOTS, syncSlots } from './chips/chips.js';
+import { Feel } from './combat/feel.js';
+import { FLINCH_MAX, HYPER_ARMOR } from './combat/combat.js';
 import { SFX } from './core/audio.js';
-import { Game, frame, update } from './core/game.js';
-import { bindPointer, bindTouchButtons, keyName, keys, pressed } from './core/input.js';
-import { loadUnlocked, saveUnlocked } from './core/save.js';
+import { Game, TICK, advance, frame } from './core/game.js';
+import { bindPointer, bindTouchButtons, keys, pad, pressed } from './core/input.js';
+import { Save, loadUnlocked } from './core/save.js';
 import { S, bullets, enemies, enemyBullets } from './core/state.js';
 import { $ } from './core/util.js';
 import { FX } from './effects/fx.js';
-import { spawnEnemies } from './enemies/enemies.js';
-import { player, resetPlayer } from './player/player.js';
+import { ENEMY_DEF, spawnEnemies, totalEnemies } from './enemies/enemies.js';
+import { ANCHOR, BLINK, CANNON, CHARGE_FULL, CHARGE_MIN, GUARD, MOVE, PARRY_WINDOW, PERFECT_WINDOW, SWING, player, resetPlayer } from './player/player.js';
 import { buildArt, resizeView } from './render/render.js';
 import { HUD } from './ui/hud.js';
 
@@ -28,17 +30,16 @@ function boot() {
   HUD.setUnlocked(player.unlocked); HUD.setActive('blade', false); HUD.setHealth(player.hp, player.maxhp, false);
   buildArt();
   resizeView();
-  resetPlayer(); spawnEnemies(); HUD.setKills(0, enemies.length);
+  resetPlayer(); spawnEnemies(); HUD.setKills(0, totalEnemies());
   bindPointer(S.gameEl); bindTouchButtons();
   window.addEventListener('resize', resizeView);
   $('start').addEventListener('click', () => Game.restart());
   $('clear').addEventListener('click', () => {
-    player.unlocked = new Set(['blade']); saveUnlocked(player.unlocked); syncSlots();
+    player.unlocked = new Set(['blade']); Save.setChips(player.unlocked); syncSlots();
     HUD.setUnlocked(player.unlocked); HUD.setActive('blade', false);
     $('save-note').textContent = 'Saved collection reset. Only BLADE is unlocked.';
   });
   S.gameEl.addEventListener('pointerdown', e => { if (!e.target.closest('button')) Game.focus(); });
-  window.addEventListener('keydown', e => { if (keyName(e) === 'KeyN') HUD.toast(SFX.toggleMusic() ? 'MUSIC ON' : 'MUSIC OFF', '#8ea3c4', 1); });
   if (location.hash === '#sprites') Game.viewer = 'sprites'; else if (location.hash === '#enemies') Game.viewer = 'enemies';
   if (Game.viewer) { $('overlay').style.display = 'none'; $('hud').style.display = 'none'; $('hint').style.display = 'none'; }
   else { HUD.showOverlay('title'); Game.focus(); }
@@ -48,10 +49,18 @@ function boot() {
 /* debug / test hooks (used by the browser test pass; harmless in play) */
 window.NS = {
   get game() { return Game; }, player, FX, get enemies() { return enemies; }, get bullets() { return bullets; }, get enemyBullets() { return enemyBullets; },
-  step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) update(dt); },
-  hold(k, v = true) { keys[k] = v; }, press(k) { if (k in pressed) pressed[k] = true; },
-  unlockAll() { for (const c of CHIP_ORDER) player.unlocked.add(c); saveUnlocked(player.unlocked); syncSlots(); HUD.setUnlocked(player.unlocked); },
-  tp(x, y = 0) { player.x = x; player.y = y; player.vx = 0; player.vy = 0; Game.snapCamera(); },
+  /* step(n, dt): n rendered frames of dt seconds each (default 60 Hz); the sim inside runs fixed 1/120 s ticks */
+  step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) advance(dt); },
+  TICK,
+  hold(k, v = true) { keys[k] = v; }, press(k, v = 1) { if (k in pressed) pressed[k] = k === 'tap' ? v : true; },   // 'tap' takes a direction ±1
+  pad,                                                    // gamepad-owned input state (cleared on disconnect)
+  unlockAll() { for (const c of CHIP_ORDER) player.unlocked.add(c); Save.setChips(player.unlocked); syncSlots(); HUD.setUnlocked(player.unlocked); },
+  tp(x, y = 0) { player.x = x; player.y = y; player.vx = 0; player.vy = 0; player.prevX = x; player.prevY = y; player.px = x; player.py = y; Game.snapCamera(); },
+  loadStage(i = 0) { return Game.loadStage(i); },         // stub: stage 0 only for now (returns false otherwise)
+  get feel() { return Feel; },                            // hitstop / shake / shakeX / slowT / log
+  get save() { return Save; },                            // data, load(), reset(), wipe(), useMemory(), source
+  consts: { MOVE, SWING, GUARD, PARRY_WINDOW, PERFECT_WINDOW, CHARGE_MIN, CHARGE_FULL, CANNON, BLINK, ANCHOR, ENEMY_DEF, FLINCH_MAX, HYPER_ARMOR, CHIPS, SLOTS },
+  totalEnemies,
 };
 
 boot();

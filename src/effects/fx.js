@@ -9,7 +9,7 @@ import { sx, sy } from '../render/render.js';
    beams, screen shake, screen flash and the global hit-stop timer.
    Everything is pooled / bounded so long fights never allocate per frame.
    ===================================================================== */
-export const PT = { SPARK: 0, CHIP: 1, RING: 2, PUFF: 3, FLASH: 4, DEBRIS: 5, BIT: 6 };
+export const PT = { SPARK: 0, CHIP: 1, RING: 2, PUFF: 3, FLASH: 4, DEBRIS: 5, BIT: 6, STAR: 7, CHEVRON: 8 };
 export const POOL = 700;
 
 export const FX = {
@@ -60,15 +60,22 @@ export const FX = {
   disc(x, y, r, life, c) { this.add(PT.FLASH, x, y, 0, 0, life, c, { r0: r }); },
   puff(x, y, vx, vy, life, c, r = 3) { this.add(PT.PUFF, x, y, vx, vy, life, c, { r0: r, r1: r * 1.8, drag: 3 }); },
 
-  hitSparks(x, y, dirX, power, c1, c2) {                 // directional spark fan + impact flash
-    const n = 7 + power * 4;
+  hitSparks(x, y, dirX, power, c1, c2) {                 // directional spark fan + impact flash (2-px sparks from power 1 up)
+    const n = 7 + power * 5;
     for (let i = 0; i < n; i++) {
       const base = dirX > 0 ? 0 : Math.PI, ang = base + rnd(-0.9, 0.9) + (i % 3 === 0 ? rnd(-1.2, 1.2) : 0);
-      this.spark(x, y, ang, rnd(6, 13 + power * 4), rnd(0.14, 0.3), i % 2 ? c1 : c2, { g: 12, c2: '#ffffff' });
+      this.spark(x, y, ang, rnd(7, 15 + power * 5), rnd(0.14, 0.3), i % 2 ? c1 : c2, { g: 12, c2: '#ffffff', sz: power >= 1 && i % 3 !== 2 ? 2 : 1 });
     }
     this.disc(x, y, 4 + power * 3, 0.1, '#ffffff');
     if (power >= 2) this.ring(x, y, 3, 14 + power * 5, 0.18, c1);
   },
+  /* impact star on the victim: a slash-cross that shrinks over ~0.12 s; size 16-24 px by power */
+  impact(x, y, dirX, power, c) {
+    const size = 14 + Math.min(3, power) * 3.5, ang = (dirX > 0 ? -0.5 : 0.5) + rnd(-0.15, 0.15);
+    this.add(PT.STAR, x, y, 0, 0, 0.13 + power * 0.015, c, { r0: size, rot: ang, c2: '#ffffff' });
+  },
+  /* small direction chevron (blink path) */
+  chevron(x, y, dir, c, life = 0.2) { this.add(PT.CHEVRON, x, y, 0, 0, life, c, { r0: dir }); },
   burst(x, y, n, c, spd = 8) {
     for (let i = 0; i < n; i++) this.spark(x, y, rnd(0, TAU), rnd(spd * 0.4, spd), rnd(0.15, 0.4), c, { g: 14 });
   },
@@ -167,7 +174,7 @@ export const FX = {
         case PT.SPARK: {
           const len = 0.045, x2 = sx(p.x - p.vx * len), y2 = sy(p.y - p.vy * len);
           if (u > 0.75) g.globalAlpha = 1 - (u - 0.75) * 3;
-          line(X, Y, x2, y2, 1, col); g.globalAlpha = 1; break;
+          line(X, Y, x2, y2, p.sz || 1, col); g.globalAlpha = 1; break;
         }
         case PT.CHIP: { const s = Math.max(1, Math.round(p.sz * (1 - u * 0.5))); R(X, Y, s, s, col); break; }
         case PT.DEBRIS: {
@@ -179,6 +186,18 @@ export const FX = {
         case PT.PUFF: { const r = lerp(p.r0, p.r1, u); g.globalAlpha = 0.5 * (1 - u); disc(X, Y, r, col); g.globalAlpha = 1; break; }
         case PT.FLASH: { const r = Math.max(1, Math.round(p.r0 * (1 - u))); disc(X, Y, r, col); glow(X, Y, col, r * 2 + 4, 0.7 * (1 - u)); break; }
         case PT.BIT: { R(X, Y, p.sz, p.sz, col); break; }
+        case PT.STAR: {                                   // impact cross: two thick strokes, white core
+          const s = p.r0 * (0.55 + 0.45 * (1 - u)), t = Math.max(1, Math.round(4 * (1 - u))), a = p.rot;
+          const cx = Math.cos(a) * s * 0.5, cy = Math.sin(a) * s * 0.5, qx = Math.cos(a + 1.35) * s * 0.32, qy = Math.sin(a + 1.35) * s * 0.32;
+          glow(X, Y, p.c, Math.round(s * 0.8) + 4, 0.8 * (1 - u));
+          line(X - cx, Y - cy, X + cx, Y + cy, t + 2, p.c); line(X - qx, Y - qy, X + qx, Y + qy, t + 1, p.c);
+          line(X - cx, Y - cy, X + cx, Y + cy, t, '#ffffff'); if (u < 0.5) line(X - qx, Y - qy, X + qx, Y + qy, Math.max(1, t - 1), '#ffffff');
+          break;
+        }
+        case PT.CHEVRON: {
+          const d = p.r0, k = Math.round(4 + 3 * u); g.globalAlpha = 1 - u;
+          line(X - d * k, Y - k, X, Y, 2, col); line(X - d * k, Y + k, X, Y, 2, col); g.globalAlpha = 1; break;
+        }
       }
     }
   },

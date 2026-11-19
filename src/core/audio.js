@@ -57,23 +57,32 @@ export const SFX = (() => {
       noise(0.13, 0.13, 3200 * k, 700 * k, 'bandpass', 0, 1.2);
       tone(620 * k, 220 * k, 0.09, 'sawtooth', 0.045);
     },
-    hit(power = 1) {
-      noise(0.12 + 0.05 * power, 0.20 + 0.06 * power, 2600, 160);
-      tone(190, 55, 0.11 + 0.03 * power, 'square', 0.10);
-      tone(1500, 600, 0.04, 'square', 0.04);
+    hit(power = 1) {                     // transient click + noise crack + sub thump (louder with power) + music duck
+      const v = 1 + 0.25 * power;
+      tone(2400, 900, 0.025, 'square', 0.07 * v);
+      noise(0.10 + 0.05 * power, (0.22 + 0.06 * power) * v, 3000, 160);
+      tone(190, 55, 0.11 + 0.03 * power, 'square', 0.11 * v);
+      tone(85, 38, 0.12 + 0.04 * power, 'sine', 0.30 * v);
+      if (power >= 3) { tone(60, 30, 0.22, 'sine', 0.35); noise(0.2, 0.18, 900, 80, 'lowpass', 0.02); }
+      duck(power >= 3 ? 0.3 : 0.5, 0.15 + 0.04 * power);
     },
     kill() {
       noise(0.42, 0.30, 2200, 70);
       tone(380, 40, 0.34, 'sawtooth', 0.11);
       tone(900, 200, 0.14, 'square', 0.05, 0.02);
+      tone(70, 30, 0.3, 'sine', 0.4);
+      duck(0.25, 0.3);
     },
+    lance()   { tone(140, 40, 0.3, 'sawtooth', 0.12); noise(0.3, 0.25, 5000, 200, 'bandpass', 0, 1.2); tone(70, 35, 0.25, 'sine', 0.35); duck(0.4, 0.2); },
+    guardbreak() { tone(400, 60, 0.35, 'square', 0.1); noise(0.3, 0.28, 6000, 300, 'highpass'); tone(90, 40, 0.2, 'sine', 0.3); duck(0.4, 0.25); },
+    parryPerfect() { tone(1760, 1700, 0.3, 'sine', 0.14); tone(2640, 2500, 0.35, 'sine', 0.1, 0.03); tone(880, 880, 0.25, 'triangle', 0.08); noise(0.08, 0.14, 9000, 4000, 'highpass'); duck(0.3, 0.45); },
     shoot()   { tone(820, 110, 0.13, 'sawtooth', 0.07); noise(0.08, 0.08, 4500, 900, 'highpass'); },
     bolt()    { noise(0.09, 0.12, 3000, 400); tone(520, 120, 0.09, 'square', 0.06); },
     eshoot()  { tone(500, 180, 0.12, 'square', 0.05); },
     charge()  { tone(180, 520, 0.38, 'sawtooth', 0.035); },
     warn()    { tone(900, 900, 0.05, 'square', 0.04); tone(1200, 1200, 0.05, 'square', 0.04, 0.08); },
     parry()   { tone(1500, 1300, 0.16, 'sine', 0.12); tone(2300, 2000, 0.22, 'sine', 0.09, 0.02); noise(0.06, 0.12, 8000, 3000, 'highpass'); },
-    block()   { tone(260, 150, 0.09, 'square', 0.08); noise(0.07, 0.10, 3500, 600, 'bandpass'); },
+    block()   { tone(150, 80, 0.12, 'square', 0.10); tone(70, 45, 0.1, 'sine', 0.25); noise(0.08, 0.14, 1400, 300, 'lowpass'); },   // dull thud (parry = bright chime)
     hurt()    { tone(260, 50, 0.24, 'sawtooth', 0.11); noise(0.2, 0.18, 1800, 120); },
     die()     { tone(500, 30, 0.7, 'sawtooth', 0.1); noise(0.7, 0.25, 3000, 60); },
     pickup()  { tone(660, 660, 0.12, 'triangle', 0.08); tone(880, 880, 0.12, 'triangle', 0.08, 0.1); tone(1320, 1320, 0.2, 'triangle', 0.08, 0.2); },
@@ -92,6 +101,14 @@ export const SFX = (() => {
     lastT[name] = now;
     try { S[name](a); } catch { /* audio must never break the game loop */ }
   }
+  /* sidechain-style duck of the music bus so impacts cut through (depth = gain multiplier at the dip) */
+  function duck(depth = 0.5, dur = 0.15) {
+    if (!music || !music.duck) return;
+    const g = music.duck.gain, t = ctx.currentTime;
+    g.cancelScheduledValues(t); g.setValueAtTime(Math.min(g.value, depth), t); g.linearRampToValueAtTime(1, t + dur);
+    lastDuck = { depth, dur, at: performance.now() };
+  }
+  let lastDuck = null;
   function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.6; return muted; }
 
   /* ------------------------------------------------------------------ EDM background track
@@ -106,10 +123,11 @@ export const SFX = (() => {
   function startMusic() {
     if (!ctx) return;
     if (music) { music.paused = false; music.bus.gain.setTargetAtTime(music.on ? 0.42 : 0, ctx.currentTime, 0.1); return; }
-    const bus = ctx.createGain(); bus.gain.value = 0.42; bus.connect(master);
+    const duckG = ctx.createGain(); duckG.gain.value = 1; duckG.connect(master);
+    const bus = ctx.createGain(); bus.gain.value = 0.42; bus.connect(duckG);
     const pump = ctx.createGain(); pump.gain.value = 1; pump.connect(bus);       // sidechain target (bass, pads, arp)
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 6; lp.connect(pump);
-    music = { bus, pump, lp, on: true, paused: false, step: 0, next: ctx.currentTime + 0.1, timer: null };
+    music = { bus, pump, lp, duck: duckG, on: true, paused: false, step: 0, next: ctx.currentTime + 0.1, timer: null };
     music.timer = setInterval(schedule, 25);
   }
   function stopMusic() { if (music) { music.paused = true; music.bus.gain.setTargetAtTime(0, ctx.currentTime, 0.15); } }
@@ -167,5 +185,5 @@ export const SFX = (() => {
     voice('square', note, t, STEP * 0.8, intro ? 0.02 + 0.02 * build : 0.035, M.lp);
   }
 
-  return { init, play, toggleMute, startMusic, stopMusic, toggleMusic, get muted() { return muted; } };
+  return { init, play, duck, toggleMute, startMusic, stopMusic, toggleMusic, get muted() { return muted; }, get lastDuck() { return lastDuck; } };
 })();

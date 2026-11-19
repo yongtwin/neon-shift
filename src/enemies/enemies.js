@@ -15,13 +15,16 @@ import { HUD } from '../ui/hud.js';
    Enemy AI. Every enemy runs the same readable loop so players can react:
      patrol → alert ("!") → windup (glowing telegraph) → attack → recover
    Gunner / Warden shoot (parryable bolts), Enforcer lunges (parry = stagger).
-   Being hit interrupts a windup (except the armoured Warden) so aggressive
-   play suppresses enemy fire.
+   Being hit interrupts a windup (except the armoured Warden and late enforcer
+   windups), but poise (combat.js FLINCH_MAX / HYPER_ARMOR) grants super-armour
+   after repeated flinches and the enemy counter-attacks: no stun-lock.
+   HP is tuned so a full blade combo (2+2+3) kills a gunner / enforcer and the
+   finisher is the hit that lands the kill.
    ===================================================================== */
 export const ENEMY_DEF = {
-  gunner:   { hp: 3, hw: 0.55, h: 1.9, speed: 1.5,  aggro: 14, sight: 3.3 },
-  enforcer: { hp: 4, hw: 0.55, h: 2.0, speed: 1.8,  aggro: 11, sight: 3.3 },
-  warden:   { hp: 16, hw: 0.9, h: 2.5, speed: 1.1,  aggro: 16, sight: 3.6 },
+  gunner:   { hp: 5,  hw: 0.55, h: 1.9, speed: 1.5,  aggro: 14, sight: 3.3 },
+  enforcer: { hp: 6,  hw: 0.55, h: 2.0, speed: 1.8,  aggro: 11, sight: 3.3 },
+  warden:   { hp: 24, hw: 0.9, h: 2.5, speed: 1.1,  aggro: 16, sight: 3.6 },
 };
 
 export function makeEnemy(spec, i) {
@@ -31,8 +34,11 @@ export function makeEnemy(spec, i) {
     minX: seg[0] + 1.3, maxX: seg[1] - 1.3, state: 'patrol', st: 0, anim: 'walk', t: i * 0.7, walk: i * 1.3,
     pause: 0, cooldown: 1 + (i % 3) * 0.4, tele: 0, flash: 0, stun: 0, kvx: 0, recoil: 0, muzzle: 0, shake: 0,
     alive: true, shots: 0, shotT: 0, lungeHit: false, lostT: 0, armor: spec.kind === 'warden',
+    vy: 0, baseY: 0, flinchN: 0, flinchT: 0, armorT: 0, counter: false,
   };
 }
+/** every enemy of the stage, arena waves included (so the HUD total never jumps) */
+export function totalEnemies() { return SPAWNS.length + ARENAS.reduce((n, a) => n + a.wave.length, 0); }
 export function spawnEnemies() { enemies.length = 0; SPAWNS.forEach((s, i) => enemies.push(makeEnemy(s, i))); }
 
 export function enemyShoot(e, speed, yOff, xOff, vy = 0) {
@@ -57,14 +63,28 @@ export function updateEnemy(e, dt) {
   e.t += dt; e.st += dt;
   e.flash = Math.max(0, e.flash - dt); e.recoil = Math.max(0, e.recoil - dt / 0.16); e.muzzle = Math.max(0, e.muzzle - dt);
   e.shake = Math.max(0, e.shake - dt); e.cooldown -= dt;
+  if (e.flinchT > 0) { e.flinchT -= dt; if (e.flinchT <= 0) e.flinchN = 0; }
+  if (e.armorT > 0 && e.stun <= 0) e.armorT = Math.max(0, e.armorT - dt);   // super-armour counts down after the flinch
 
-  if (Math.abs(e.kvx) > 0.15) { e.x = clamp(e.x + e.kvx * dt, e.minX, e.maxX); e.kvx *= Math.exp(-dt * 9); } else e.kvx = 0;
+  /* knock-back (≈ kvx / 9 units) with a wall bounce at the segment ends, plus a vertical pop */
+  if (Math.abs(e.kvx) > 0.15) {
+    const nx = e.x + e.kvx * dt;
+    if ((nx < e.minX || nx > e.maxX) && Math.abs(e.kvx) > 5) {
+      FX.hitSparks(nx < e.minX ? e.minX - e.hw : e.maxX + e.hw, e.y + e.h * 0.4, -Math.sign(e.kvx), 0, EN.r2, '#ffffff');
+      e.kvx = -e.kvx * 0.3;
+    }
+    e.x = clamp(nx, e.minX, e.maxX); e.kvx *= Math.exp(-dt * 9);
+  } else e.kvx = 0;
+  if (e.vy || e.y > e.baseY) {
+    e.vy -= 34 * dt; e.y += e.vy * dt;
+    if (e.y <= e.baseY) { if (e.vy < -4) FX.dust(e.x, e.baseY, 4, 0); e.y = e.baseY; e.vy = 0; }
+  }
 
   const dxp = p.x - e.x, dist = Math.abs(dxp), dy = Math.abs(p.y - e.y);
   const sees = !p.dead && dist < d.aggro && dy < d.sight;
 
   /* contact damage (v0.3 rule) — stunned/staggered enemies are harmless */
-  if (!p.dead && dist < 0.95 && dy < 1.6 && e.stun <= 0 && e.state !== 'stagger') hurtPlayer(1, e.x);
+  if (!p.dead && dist < 0.95 && dy < 1.6 && e.stun <= 0 && e.state !== 'stagger') hurtPlayer(1, e.x, { contact: e });
 
   if (e.kind === 'warden' && !e.phase2 && e.hp <= e.maxhp / 2) {          // boss phase 2: OVERDRIVE
     e.phase2 = true; e.flash = 0.3; e.cooldown = 0.6; setState(e, 'alert');
@@ -74,7 +94,11 @@ export function updateEnemy(e, dt) {
 
   if (e.stun > 0) {                                                      // flinch (hit reaction)
     e.stun -= dt; e.anim = 'hit';
-    if (e.stun <= 0) { setState(e, sees ? 'alert' : 'patrol'); e.cooldown = Math.max(e.cooldown, 0.5); }
+    if (e.stun <= 0) {
+      if (e.counter && sees) counterAttack(e, dist);                     // poise broke: armoured counter-attack
+      else { setState(e, sees ? 'alert' : 'patrol'); e.cooldown = Math.max(e.cooldown, 0.5); }
+      e.counter = false;
+    }
     return;
   }
 
@@ -98,6 +122,7 @@ export function updateEnemy(e, dt) {
       if (e.kind === 'enforcer') { if (ready) setState(e, 'chase'); }
       else if (ready && e.kind === 'warden' && dist < 4.5) { setState(e, 'windup'); e.attack = 'slam'; SFX.play('charge'); }
       else if (ready && dist > 2) { setState(e, 'windup'); e.attack = 'shoot'; SFX.play('charge'); }
+      else if (ready && e.kind === 'gunner') { e.kvx = -e.facing * 11; e.cooldown = 0.35; }   // too close: hop back to make room (R-022)
       break;
     }
     case 'chase': {                                                        // enforcer closes the gap
@@ -154,6 +179,15 @@ export function updateEnemy(e, dt) {
   }
 }
 
+/* after the poise breaks the enemy acts at once, under super-armour */
+function counterAttack(e, dist) {
+  e.facing = player.x >= e.x ? 1 : -1; e.cooldown = 0;
+  if (e.kind === 'enforcer') { setState(e, dist < 3.6 ? 'windup' : 'chase'); if (dist < 3.6) SFX.play('charge'); }
+  else if (dist > 2) { setState(e, 'windup'); e.attack = 'shoot'; SFX.play('charge'); }
+  else { setState(e, 'alert'); e.kvx = -e.facing * 11; e.st = 0.4; }
+  FX.ring(e.x, e.y + e.h * 0.6, 2, 18, 0.2, EN.r2);
+}
+
 export function updateEnemies(dt) { for (const e of enemies) updateEnemy(e, dt); }
 
 /* ------------------------------------------------------------------ lockdown arenas */
@@ -173,7 +207,7 @@ export function updateArenas(dt) {
           const e = makeEnemy(w, enemies.length); e.state = 'alert'; e.cooldown = 0.8; e.flash = 0.2;
           enemies.push(e); FX.ring(e.x, 1, 3, 26, 0.3, EN.r1); FX.bits(e.x, 1, EN.r1, 12);
         }
-        HUD.setKills(Game.kills, enemies.length);
+        HUD.setKills(Game.kills, totalEnemies());
       }
       HUD.toast(a.title, '#ff6a5a', 1.8); SFX.play('warn'); Feel.kick(2);
       break;
