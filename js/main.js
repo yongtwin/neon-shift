@@ -21,14 +21,15 @@ const Game = {
     pressed.jump = pressed.dash = pressed.attack = false;     // drop presses made on the title screen
     resetPlayer(); spawnEnemies();
     bullets = []; enemyBullets = []; FX.reset();
-    this.kills = 0; this.combo = 0; this.comboT = 0; this.bestCombo = 0; this.runTime = 0; this.lead = 0;
+    this.kills = 0; this.combo = 0; this.comboT = 0; this.bestCombo = 0; this.runTime = 0; this.lead = 0; this.slowT = 0;
+    resetArenas(); HUD.setBoss(null);
     HUD.setActive('blade', false); HUD.setUnlocked(player.unlocked); HUD.setHealth(player.hp, player.maxhp, false);
     HUD.setKills(0, enemies.length);
     HUD.hideOverlay();
     this.running = true; this.paused = false;
     this.snapCamera();
     HUD.toast('MISSION START // FIND THE CHIPS', '#2fe6ff');
-    HUD.hint('[J] SLASH — swing into enemy bolts to DEFLECT them  ·  [W] JUMP ×2  ·  [SHIFT] DASH', '#d6fdff', 8);
+    HUD.hint('[J] SLASH ×3 COMBO  ·  [W] JUMP ×2  ·  [SHIFT] DASH — attack out of a dash to cancel it', '#d6fdff', 8);
     SFX.startMusic();
     this.focus();
   },
@@ -44,6 +45,8 @@ const Game = {
     HUD.showOverlay('complete', { message: 'EXTRACTION COMPLETE — YOU REWROTE THE SYSTEM', kills: this.kills, total: enemies.length, chips: player.unlocked.size, time, bestCombo: this.bestCombo });
   },
   snapCamera() { updateCamera(1, true); },
+  arena: null, slowT: 0,
+  slowmo(t) { this.slowT = Math.max(this.slowT, t); },
 };
 
 function updateCamera(dt, snap) {
@@ -71,6 +74,7 @@ function update(dt) {
 
   FX.updateScreen(dt);
   if (FX.hitstop > 0) { FX.hitstop -= dt; return; }                    // HIT-STOP: sim frozen, loop keeps running
+  if (Game.slowT > 0) { Game.slowT -= dt; dt *= 0.3; }                  // perfect-parry slow motion
 
   Game.runTime += dt;
   updatePlayer(dt);
@@ -79,6 +83,7 @@ function update(dt) {
     if (player.x >= EXIT_X) { Game.complete(); return; }
   }
   updateEnemies(dt);
+  updateArenas(dt);
   updateBullets(dt);
   FX.update(dt);
   updateDebugBoxes(dt);
@@ -87,6 +92,8 @@ function update(dt) {
   HUD.setCombo(Game.combo, Game.comboT / 2.2);
   for (const id of CHIP_ORDER) HUD.setCooldown(id, player.cdMax[id] > 0 ? clamp(player.cd[id] / player.cdMax[id], 0, 1) : 0);
   HUD.setLive('shield', player.shielding); HUD.setLive('blink', player.warpU > 0);
+  const boss = Game.arena && Game.arena.boss ? enemies.find(e => e.kind === 'warden' && e.alive) : null;
+  HUD.setBoss(boss);
   HUD.setProgress(clamp(Math.round(player.x / 139 * 100), 0, 100));
 
   for (const d of DECOR) {                                              // street steam

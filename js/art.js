@@ -183,6 +183,12 @@ function drawCannon(hx, hy, angDeg, len, A, p) {
   }
   D(ex, ey, 1, A.l);
   GL(ex, ey, A.m, 5, 0.35 + 0.3 * (p.muzzle > 0 ? 1 : 0));
+  if (p.charge > 0 && !OV) {                                                 // charging plasma orb
+    const full = p.charge >= 1, pulse = ((p.t * (full ? 20 : 10)) | 0) % 2;
+    const r = 1 + Math.round(p.charge * 4) + (full && pulse ? 1 : 0);
+    T(ex + dx * 2, ey + dy * 2); disc(TX, TY, r + 1, A.d); disc(TX, TY, r, pulse ? PAL.wh : A.l);
+    glow(TX, TY, A.m, 8 + Math.round(p.charge * 10), 0.4 + 0.5 * p.charge);
+  }
   if (p.muzzle > 0) {                                                        // muzzle flash star
     const m = clamp(p.muzzle / 0.1, 0, 1), s = 4 + 6 * m;
     L(ex, ey, ex + dx * (s + 4), ey + dy * (s + 4), 3, A.l);

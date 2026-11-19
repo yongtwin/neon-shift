@@ -19,14 +19,21 @@ function makeEnemy(spec, i) {
 }
 function spawnEnemies() { enemies = SPAWNS.map(makeEnemy); }
 
-function enemyShoot(e, speed, yOff, xOff) {
-  enemyBullets.push({ x: e.x + e.facing * xOff, y: e.y + yOff, vx: e.facing * speed, life: 2.1, dmg: 1, reflected: false, owner: e });
+function enemyShoot(e, speed, yOff, xOff, vy = 0) {
+  enemyBullets.push({ x: e.x + e.facing * xOff, y: e.y + yOff, vx: e.facing * speed, vy, life: 2.1, dmg: 1, reflected: false, owner: e });
   e.recoil = 1; e.muzzle = 0.08;
   FX.hitSparks(e.x + e.facing * (xOff + 0.4), e.y + yOff, e.facing, 0, '#ff6a5a', '#ffd27a');
   SFX.play('eshoot');
 }
 
 function setState(e, s) { e.state = s; e.st = 0; e.tele = 0; }
+
+function wardenSlam(e) {                                               // ground shockwaves both ways — jump them (or guard)
+  for (const dir of [-1, 1]) enemyBullets.push({ x: e.x + dir * 0.9, y: 0.35, vx: dir * 11, vy: 0, life: 1.4, dmg: 1, wave: true, owner: e });
+  FX.dust(e.x - 0.8, 0, 8, -1); FX.dust(e.x + 0.8, 0, 8, 1);
+  FX.ring(e.x, 0.3, 4, 40, 0.3, EN.r2); FX.kick(5);
+  SFX.play('hit', 3);
+}
 
 function updateEnemy(e, dt) {
   if (!e.alive) return;
@@ -42,6 +49,12 @@ function updateEnemy(e, dt) {
 
   /* contact damage (v0.3 rule) — stunned/staggered enemies are harmless */
   if (!p.dead && dist < 0.95 && dy < 1.6 && e.stun <= 0 && e.state !== 'stagger') hurtPlayer(1, e.x);
+
+  if (e.kind === 'warden' && !e.phase2 && e.hp <= e.maxhp / 2) {          // boss phase 2: OVERDRIVE
+    e.phase2 = true; e.flash = 0.3; e.cooldown = 0.6; setState(e, 'alert');
+    FX.text('OVERDRIVE', e.x, e.y + e.h + 1, EN.r2, 1.2); FX.ring(e.x, e.y + 1.2, 4, 60, 0.4, EN.r1);
+    FX.screenFlash(0.3, '#ff6a5a'); FX.kick(5); SFX.play('charge');
+  }
 
   if (e.stun > 0) {                                                      // flinch (hit reaction)
     e.stun -= dt; e.anim = 'hit';
@@ -67,7 +80,8 @@ function updateEnemy(e, dt) {
       if (e.lostT > 1.8) { setState(e, 'patrol'); break; }
       const ready = e.st > 0.38 && e.cooldown <= 0 && sees;
       if (e.kind === 'enforcer') { if (ready) setState(e, 'chase'); }
-      else if (ready && dist > 2) { setState(e, 'windup'); SFX.play('charge'); }
+      else if (ready && e.kind === 'warden' && dist < 4.5) { setState(e, 'windup'); e.attack = 'slam'; SFX.play('charge'); }
+      else if (ready && dist > 2) { setState(e, 'windup'); e.attack = 'shoot'; SFX.play('charge'); }
       break;
     }
     case 'chase': {                                                        // enforcer closes the gap
@@ -79,12 +93,13 @@ function updateEnemy(e, dt) {
       break;
     }
     case 'windup': {
-      const dur = e.kind === 'warden' ? 0.7 : e.kind === 'enforcer' ? 0.5 : 0.5;
+      const dur = e.kind === 'warden' ? (e.phase2 ? 0.5 : 0.7) : 0.5;
       e.anim = 'windup'; e.tele = clamp(e.st / dur, 0, 1);
       if (e.tele < 0.65) face();                                           // aim locks late → readable and fair
       if (e.st >= dur) {
         if (e.kind === 'enforcer') { setState(e, 'lunge'); e.lungeHit = false; }
-        else { setState(e, 'fire'); e.shots = e.kind === 'warden' ? 3 : 1; e.shotT = 0; }
+        else if (e.attack === 'slam') { wardenSlam(e); e.cooldown = e.phase2 ? 0.8 : 1.3; setState(e, 'alert'); }
+        else { setState(e, 'fire'); e.shots = e.kind === 'warden' ? (e.phase2 ? 2 : 3) : 1; e.shotT = 0; }
       }
       break;
     }
@@ -92,8 +107,10 @@ function updateEnemy(e, dt) {
       e.anim = 'fire';
       e.shotT -= dt;
       if (e.shots > 0 && e.shotT <= 0) {
-        if (e.kind === 'warden') enemyShoot(e, 14.5, 1.5, 1.5); else enemyShoot(e, 13, 1.1, 1.15);
-        e.shots--; e.shotT = 0.15;
+        if (e.kind === 'warden' && e.phase2) { for (let k = -2; k <= 2; k++) enemyShoot(e, 13, 1.5, 1.5, k * 2.4); e.shotT = 0.35; }
+        else if (e.kind === 'warden') { enemyShoot(e, 14.5, 1.5, 1.5); e.shotT = 0.15; }
+        else { enemyShoot(e, 13, 1.1, 1.15); e.shotT = 0.15; }
+        e.shots--;
       }
       if (e.shots <= 0 && e.st > 0.28) { e.cooldown = e.kind === 'warden' ? 1.5 : 1.15 + (e.x % 3) * 0.2; setState(e, 'alert'); }
       break;
@@ -122,3 +139,37 @@ function updateEnemy(e, dt) {
 }
 
 function updateEnemies(dt) { for (const e of enemies) updateEnemy(e, dt); }
+
+/* ------------------------------------------------------------------ lockdown arenas */
+function resetArenas() { for (const a of ARENAS) { a.spawned = false; a.cleared = false; a.wallT = 0; } Game.arena = null; }
+function updateArenas(dt) {
+  const p = player;
+  for (const a of ARENAS) a.wallT = Math.max(0, a.wallT - dt);
+  if (!Game.arena) {
+    if (p.dead) return;
+    for (const a of ARENAS) {
+      if (a.cleared || p.x < a.trigger || p.x > a.x1) continue;
+      if (!enemies.some(e => e.alive && e.x > a.x0 && e.x < a.x1) && a.spawned) { a.cleared = true; continue; }
+      Game.arena = a; a.wallT = 0.4;
+      if (!a.spawned) {
+        a.spawned = true;
+        for (const w of a.wave) {
+          const e = makeEnemy(w, enemies.length); e.state = 'alert'; e.cooldown = 0.8; e.flash = 0.2;
+          enemies.push(e); FX.ring(e.x, 1, 3, 26, 0.3, EN.r1); FX.bits(e.x, 1, EN.r1, 12);
+        }
+        HUD.setKills(Game.kills, enemies.length);
+      }
+      HUD.toast(a.title, '#ff6a5a', 1.8); SFX.play('warn'); FX.kick(2);
+      break;
+    }
+    return;
+  }
+  const a = Game.arena;
+  p.x = clamp(p.x, a.x0 + 0.4, a.x1 - 0.4);                             // laser walls
+  for (const b of enemyBullets) if (b.x < a.x0 || b.x > a.x1) b.life = 0;
+  if (!enemies.some(e => e.alive && e.x > a.x0 && e.x < a.x1)) {
+    a.cleared = true; Game.arena = null; a.wallT = 0.5;
+    HUD.toast(a.boss ? 'WARDEN DOWN — EXTRACTION OPEN' : 'AREA CLEAR', '#2fe6ff', 2); SFX.play('check');
+    FX.ring(a.x0, 2, 3, 30, 0.4, '#2fe6ff'); FX.ring(a.x1, 2, 3, 30, 0.4, '#2fe6ff');
+  }
+}

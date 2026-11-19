@@ -40,6 +40,14 @@ const HUD = {
     if (c.live === on) return;
     c.live = on; c.el.classList.toggle('live', on);
   },
+  setBoss(e) {                               // top-centre boss integrity bar
+    const on = !!e;
+    if (this.last.bossOn !== on) { this.last.bossOn = on; $('boss').classList.toggle('on', on); }
+    if (!on) return;
+    const f = Math.round(Math.max(0, e.hp) / e.maxhp * 100) / 100, ph = !!e.phase2;
+    if (this.last.bossF !== f) { this.last.bossF = f; $('boss-fill').style.transform = `scaleX(${f})`; }
+    if (this.last.bossPh !== ph) { this.last.bossPh = ph; $('boss-name').textContent = ph ? 'WARDEN // OVERDRIVE' : 'WARDEN // SECURITY CORE'; $('boss').classList.toggle('p2', ph); }
+  },
   hint(text, color = '#2fe6ff', dur = 6) {   // contextual tutorial line at the bottom of the screen
     const el = $('hint'); el.textContent = text; el.style.color = color;
     el.classList.remove('off'); this.hintT = dur;
@@ -113,7 +121,7 @@ const HUD = {
       $('ov-controls').style.display = 'none';
       $('start').textContent = '↻ PLAY AGAIN'; $('clear').style.display = 'none';
     } else {
-      set('ov-eyebrow', '◉ EXPERIMENTAL COMBAT BUILD · v0.5');
+      set('ov-eyebrow', '◉ EXPERIMENTAL COMBAT BUILD · v0.6');
       set('ov-title', 'NEON<span>//</span>SHIFT');
       set('ov-lead', 'RUN FAST. REWRITE YOUR BODY. NEVER DRAW A BAD HAND.');
       $('ov-controls').style.display = '';

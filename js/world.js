@@ -6,9 +6,9 @@
 const STORAGE = 'neonshift_chips_v1';       // same key as v0.3 so existing unlocks carry over
 const CHIP_ORDER = ['blade', 'cannon', 'shield', 'blink'];
 const CHIP_INFO = {   // slot = which body part the chip rewrites; key = the button that fires it
-  blade:  { id: 'blade',  name: 'BLADE',  slot: 'R-ARM', key: 'J', sub: 'COMBO · DEFLECTS',  cool: 0.22 },
-  cannon: { id: 'cannon', name: 'CANNON', slot: 'R-ARM', key: 'J', sub: 'AUTO-AIM · I / S',   cool: 0.30 },
-  shield: { id: 'shield', name: 'SHIELD', slot: 'L-ARM', key: 'L', sub: 'HOLD · TAP = PARRY', cool: 0.55 },
+  blade:  { id: 'blade',  name: 'BLADE',  slot: 'R-ARM', key: 'J', sub: '3-HIT COMBO',        cool: 0.22 },
+  cannon: { id: 'cannon', name: 'CANNON', slot: 'R-ARM', key: 'J', sub: 'TAP · HOLD = CHARGE', cool: 0.30 },
+  shield: { id: 'shield', name: 'SHIELD', slot: 'L-ARM', key: 'L', sub: 'HOLD · TAP = PARRY',  cool: 0.55 },
   blink:  { id: 'blink',  name: 'BLINK',  slot: 'LEGS',  key: 'K', sub: 'WARP · SLASH',       cool: 1.60 },
 };
 
@@ -23,13 +23,19 @@ const CHECKPOINTS = [0, 42, 83, 124];
 const ENEMY_DEF = {
   gunner:   { hp: 3, hw: 0.55, h: 1.9, speed: 1.5,  aggro: 14, sight: 3.3 },
   enforcer: { hp: 4, hw: 0.55, h: 2.0, speed: 1.8,  aggro: 11, sight: 3.3 },
-  warden:   { hp: 9, hw: 0.9,  h: 2.5, speed: 1.1,  aggro: 16, sight: 3.6 },
+  warden:   { hp: 16, hw: 0.9, h: 2.5, speed: 1.1,  aggro: 16, sight: 3.6 },
 };
 // kind per spawn; positions are v0.3's enemy x list
 const SPAWNS = [
   { x: 13, kind: 'gunner' }, { x: 27, kind: 'enforcer' }, { x: 34, kind: 'gunner' }, { x: 45, kind: 'gunner' },
   { x: 54, kind: 'enforcer' }, { x: 69, kind: 'gunner' }, { x: 86, kind: 'enforcer' }, { x: 94, kind: 'gunner' },
   { x: 111, kind: 'enforcer' }, { x: 131, kind: 'warden' },
+];
+
+/* lockdown arenas: walls rise when you pass `trigger`, drop when every enemy inside is down */
+const ARENAS = [
+  { id: 'yard', x0: 64.4, x1: 80.6, trigger: 66.5, title: 'AMBUSH — LOCKDOWN', wave: [{ x: 77, kind: 'enforcer' }, { x: 74.5, kind: 'gunner' }] },
+  { id: 'boss', x0: 124.4, x1: 137.6, trigger: 126.5, title: 'WARDEN — LOCKDOWN', wave: [], boss: true },
 ];
 
 function groundSegments() { return PLAT.filter(p => p[2] === 0); }

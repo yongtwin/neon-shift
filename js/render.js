@@ -303,6 +303,22 @@ function drawPortal() {
   const lbl = done ? 'EXIT OPEN' : 'EXIT'; text(lbl, X - (textW(lbl) >> 1), Y - 88, done ? '#ffe06b' : '#9fe9f5', 1, '#05070e');
 }
 
+function drawArenaWalls() {
+  const tm = Game.time;
+  for (const a of ARENAS) {
+    const on = Game.arena === a, k = on ? Math.min(1, 1 - a.wallT / 0.4) : a.wallT / 0.5;
+    if (k <= 0) continue;
+    for (const wx of [a.x0, a.x1]) {
+      const X = sx(wx), top = sy(0) - Math.round(200 * k);
+      if (X < -20 || X > view.W + 20) continue;
+      g.globalAlpha = 0.25 * k; R(X - 3, top, 7, sy(0) - top, '#ff3b4a'); g.globalAlpha = 1;
+      for (let y = top; y < sy(0); y += 3) if (((y + (tm * 60 | 0)) % 9) < 5) R(X - 1, y, 3, 2, (y % 2) ? '#ff6a5a' : '#fff0c8');
+      glow(X, sy(0) - 20, '#ff3b4a', 22, 0.6 * k);
+      R(X - 4, sy(0) - 3, 9, 3, '#1b2238'); R(X - 4, sy(0) - 3, 9, 1, '#ff3b4a');
+    }
+  }
+}
+
 function drawForeground() {
   const par = 1.38;
   for (const f of FG) {
@@ -359,6 +375,12 @@ function drawEnemyEntity(e) {
 
 function drawEnemyBullet(b) {
   const X = sx(b.x), Y = sy(b.y);
+  if (b.wave) {                                                         // ground shockwave
+    const f = ((Game.time * 30) | 0) % 2, d = Math.sign(b.vx);
+    for (let i = 0; i < 4; i++) { g.globalAlpha = 1 - i * 0.22; R(X - d * i * 4 - 2, Y - 8 + i * 2 - f, 4, 10 - i * 2, i ? '#ff6a5a' : '#fff0c8'); }
+    g.globalAlpha = 1; glow(X, Y - 4, '#ff3b4a', 14, 0.8);
+    return;
+  }
   for (let k = 1; k <= 3; k++) { g.globalAlpha = 0.5 / k; R(X - Math.sign(b.vx) * k * 3 - 1, Y - 1, 3, 3, '#ff6a5a'); }
   g.globalAlpha = 1;
   disc(X, Y, 3, '#0a0508'); disc(X, Y, 2, '#ff3b4a'); px(X, Y, '#fff0c8'); px(X - 1, Y - 1, '#ffb347');
@@ -368,10 +390,11 @@ function drawPlayerBullet(b) {                                       // drawn al
   const X = sx(b.x), Y = sy(b.y), sp = Math.hypot(b.vx, b.vy || 0) || 1, ux = b.vx / sp, uy = -(b.vy || 0) / sp, refl = b.reflected;
   const c1 = refl ? '#9ff6ff' : '#ffc43d', c2 = '#ffffff';
   g.globalAlpha = 0.45; line(X - ux * 16, Y - uy * 16, X, Y, 3, c1); g.globalAlpha = 1;
-  line(X - ux * 6, Y - uy * 6, X + ux * 5, Y + uy * 5, 5, '#05070e');
-  line(X - ux * 5, Y - uy * 5, X + ux * 4, Y + uy * 4, 3, c1);
-  line(X - ux * 3, Y - uy * 3, X + ux * 4, Y + uy * 4, 1, c2);
-  glow(X, Y, c1, 14, 0.85);
+  const k = b.big ? 2 : 1;
+  line(X - ux * 6 * k, Y - uy * 6 * k, X + ux * 5 * k, Y + uy * 5 * k, b.big ? 9 : 5, '#05070e');
+  line(X - ux * 5 * k, Y - uy * 5 * k, X + ux * 4 * k, Y + uy * 4 * k, b.big ? 7 : 3, c1);
+  line(X - ux * 3 * k, Y - uy * 3 * k, X + ux * 4 * k, Y + uy * 4 * k, b.big ? 3 : 1, c2);
+  glow(X, Y, c1, b.big ? 24 : 14, 0.85);
 }
 
 /* cannon aim guide: dotted sight line + lock-on brackets on the auto-aim target */
@@ -425,6 +448,7 @@ function renderFrame() {
   drawPlatforms();
   drawProps();
   drawCheckpoints(); drawPortal(); drawPickups();
+  drawArenaWalls();
   for (const e of enemies) if (e.alive) drawEnemyEntity(e);
   FX.drawBelow();
   drawAimGuide();

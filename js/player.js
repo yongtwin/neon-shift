@@ -32,6 +32,7 @@ const player = {
   anim: 'idle', t: 0, run: 0, rot: 0, flipT: 0, warpU: 0, recoil: 0, muzzle: 0, xf: 1, flash: 0, hurtT: 0, landT: 0,
   dead: false, deadT: 0, burst: false, ghostT: 0, px: 3, py: 0, scarf: new Float32Array(SCARF_N * 2),
   hasShield: false, hasBlink: false, aim: 0, aimMode: 'auto', aimTarget: null, blinkBuf: 0,
+  coyote: 0, jumpBuf: 0, charging: false, chargeT: 0, charge: 0, critT: 0,
 };
 
 function resetPlayer() {
@@ -41,6 +42,7 @@ function resetPlayer() {
     chip: 'blade', atkStep: 0, atkT: 0, atkU: 0, comboStep: 0, comboWin: 0, atkBuf: 0, shielding: false, shieldPrev: false,
     shieldAmt: 0, parryT: 0, blockFlash: 0, anim: 'idle', rot: 0, flipT: 0, warpU: 0, recoil: 0, muzzle: 0, xf: 1, flash: 0,
     hurtT: 0, landT: 0, dead: false, deadT: 0, ghostT: 0, px: 3, py: 0, aim: 0, aimTarget: null, blinkBuf: 0,
+    coyote: 0, jumpBuf: 0, charging: false, chargeT: 0, charge: 0, critT: 0,
   });
   syncSlots();
   p.atkHits.length = 0;
@@ -106,11 +108,9 @@ function nudge(dir, amt) {
   p.facing = dir; p.vx = dir * 8; p.x = clamp(p.x + dir * amt, 0.5, WORLD_W - 2);
 }
 
-function doJump() {
+function doJump(fromGround) {
   const p = player;
-  if (!(p.onGround || p.airJumps < 1)) return;
-  const fromGround = p.onGround;
-  p.vy = MOVE.jump; p.onGround = false; p.airJumps = fromGround ? 0 : p.airJumps + 1;
+  p.vy = MOVE.jump; p.onGround = false; p.coyote = 0; p.airJumps = fromGround ? 0 : p.airJumps + 1;
   if (fromGround) { FX.dust(p.x, p.y, 4, -p.facing); SFX.play('jump'); }
   else {                                                              // double jump = somersault + air ring
     p.flipT = 0.36;
@@ -188,7 +188,6 @@ function updateSwing(dt) {
     if (p.atkStep === 3) FX.dust(p.x + p.facing, p.y, 5, p.facing);
   }
   if (p.atkT >= S.act[0] && p.atkT <= S.act[1]) bladeHitCheck(S, p.atkStep);
-  if (p.atkT >= S.act[0] - 0.02 && p.atkT <= S.act[1] + 0.05) bladeDeflect(S, p.atkStep);   // the blade also bats bolts back
   if (p.atkT >= p.atkDur) {
     if (p.atkStep === 3) p.comboWin = 0;                               // finisher ends the chain
     p.atkStep = 0; p.atkU = 0;
@@ -214,6 +213,20 @@ function fireCannon() {
   FX.disc(m.x, m.y, 4, 0.06, '#ffffff');
   FX.add(PT.CHIP, p.x + f * 0.3, p.y + 1.2, -f * rnd(1, 3), rnd(3, 5), 0.4, '#ffc43d', { g: 24, sz: 1 });
   SFX.play('shoot');
+}
+
+const CHARGE_MIN = 0.35, CHARGE_FULL = 0.85;
+function fireCharged(k) {                                              // hold J: piercing plasma lance
+  const p = player, f = p.facing;
+  if (p.aimTarget) { const sh = shoulderWorld(), e = p.aimTarget; p.aim = clamp(Math.atan2(e.y + e.h * 0.55 - sh.y, Math.abs(e.x - sh.x)), -85 * DEG, 85 * DEG); }
+  const m = muzzleWorld();
+  p.cd.cannon = 0.45; p.cdMax.cannon = 0.45; p.muzzle = 0.16; p.recoil = 1;
+  bullets.push({ x: m.x, y: m.y, vx: m.dx * 27, vy: m.dy * 27, life: 1.3, dmg: Math.round(2 + 2 * k), trail: 0, big: true, pierce: true, hits: [] });
+  p.vx -= m.dx * (5 + 5 * k);
+  FX.kick(2.5 + 2 * k, -f); FX.screenFlash(0.12 * k, '#fff3b8');
+  FX.ring(m.x, m.y, 3, 16 + 10 * k, 0.2, '#ffc43d'); FX.disc(m.x, m.y, 6 + 4 * k, 0.08, '#ffffff');
+  for (let i = 0; i < 10; i++) FX.spark(m.x, m.y, Math.atan2(m.dy, m.dx) + rnd(-0.7, 0.7), rnd(8, 16), rnd(0.1, 0.22), i % 2 ? '#ffc43d' : '#ffffff', { g: 6 });
+  SFX.play('kill');
 }
 
 function doBlink() {
@@ -247,6 +260,7 @@ function updatePlayer(dt) {
   p.parryT = Math.max(0, p.parryT - dt); p.blockFlash = Math.max(0, p.blockFlash - dt);
   p.comboWin = Math.max(0, p.comboWin - dt); p.atkBuf = Math.max(0, p.atkBuf - dt);
   p.xf = Math.min(1, p.xf + dt / 0.28); p.blinkBuf = Math.max(0, p.blinkBuf - dt);
+  p.jumpBuf = Math.max(0, p.jumpBuf - dt); p.critT = Math.max(0, p.critT - dt);
   for (const k in p.cd) p.cd[k] = Math.max(0, p.cd[k] - dt);
   if (p.flipT > 0) { p.flipT = Math.max(0, p.flipT - dt); p.rot = p.atkStep ? 0 : -(1 - p.flipT / 0.36) * TAU; if (p.flipT === 0) p.rot = 0; }
 
@@ -256,8 +270,13 @@ function updatePlayer(dt) {
   const dir = (right ? 1 : 0) - (left ? 1 : 0);
   if (dir) p.facing = dir;
 
-  if (pressed.jump) doJump();
+  /* jump with coyote time (0.1s after leaving a ledge) and a 0.12s landing buffer */
+  if (pressed.jump) p.jumpBuf = 0.12;
   pressed.jump = false;
+  if (p.jumpBuf > 0) {
+    if (p.onGround || p.coyote > 0) { doJump(true); p.jumpBuf = 0; }
+    else if (p.airJumps < 1) { doJump(false); p.jumpBuf = 0; }
+  }
   if (pressed.dash && p.dashCd <= 0) doDash();
   pressed.dash = false;
   if (pressed.attack) p.atkBuf = 0.16;
@@ -277,11 +296,29 @@ function updatePlayer(dt) {
   if (p.blinkBuf > 0 && p.hasBlink && p.cd.blink <= 0 && p.dash <= 0) { doBlink(); p.blinkBuf = 0; }
   else if (p.blinkBuf > 0 && !p.hasBlink) { p.blinkBuf = 0; HUD.toast('LEGS SLOT EMPTY — FIND THE BLINK CHIP', '#8ea3c4', 1.2); }
 
+  /* ---- dash-cancel: attacking out of a dash keeps some of its momentum ---- */
+  if (p.dash > 0 && p.atkBuf > 0 && p.dash < MOVE.dashTime - 0.05) { p.dash = 0; p.vx = p.facing * 14; }
+
   /* ---- R-ARM: weapon ---- */
   if (p.dash <= 0) {
     if (p.chip === 'blade' && (p.atkBuf > 0 || held) && p.cd.blade <= 0) { startSwing(); p.atkBuf = 0; }
-    else if (p.chip === 'cannon' && (p.atkBuf > 0 || held) && p.cd.cannon <= 0) { fireCannon(); p.atkBuf = 0; }
+    else if (p.chip === 'cannon') {                                     // tap = shot, hold = charge, release = lance
+      if (p.atkBuf > 0 && p.cd.cannon <= 0 && !p.charging) { fireCannon(); p.atkBuf = 0; p.charging = true; p.chargeT = 0; }
+      if (p.charging) {
+        if (held) {
+          const was = p.chargeT; p.chargeT += dt;
+          if (was < CHARGE_MIN && p.chargeT >= CHARGE_MIN) SFX.play('charge');
+          if (was < CHARGE_FULL && p.chargeT >= CHARGE_FULL) { SFX.play('warn'); FX.ring(muzzleWorld().x, muzzleWorld().y, 2, 12, 0.18, '#ffffff'); }
+          if (p.chargeT > CHARGE_MIN && Math.random() < 0.5) { const m = muzzleWorld(); FX.bits(m.x, m.y, '#ffc43d', 1); }
+        } else {
+          if (p.chargeT >= CHARGE_MIN) fireCharged(clamp((p.chargeT - CHARGE_MIN) / (CHARGE_FULL - CHARGE_MIN), 0, 1));
+          p.charging = false; p.chargeT = 0;
+        }
+      }
+    }
   }
+  if (p.chip !== 'cannon') { p.charging = false; p.chargeT = 0; }
+  p.charge = p.charging ? clamp((p.chargeT - CHARGE_MIN * 0.5) / (CHARGE_FULL - CHARGE_MIN * 0.5), 0, 1) : 0;
   updateSwing(dt);
 
   /* ---- horizontal motion (v0.3 feel) ---- */
@@ -305,6 +342,7 @@ function updatePlayer(dt) {
       p.y = py; p.vy = 0; p.onGround = true; p.airJumps = 0;
     }
   }
+  if (p.onGround) p.coyote = 0.1; else p.coyote = Math.max(0, p.coyote - dt);
   if (p.onGround && !wasGround) {
     p.landT = 0.1;
     if (preVy < -7) { FX.dust(p.x, p.y, 6, 0); SFX.play('land'); }
@@ -368,6 +406,7 @@ function respawn() {
   p.hp = p.maxhp; p.x = p.checkpoint + 2; p.y = 1; p.vx = 0; p.vy = 3; p.inv = 2.2; p.hurtT = 0;
   p.atkStep = 0; p.dash = 0; p.shielding = false;
   bullets.length = 0; enemyBullets.length = 0;
+  Game.arena = null;                                                     // walls drop on death; re-entering re-locks
   resetScarf();
   FX.ring(p.x, p.y + 1, 2, 30, 0.35, '#ff8cbb'); FX.bits(p.x, p.y + 1.1, '#ff8cbb', 14);
   HUD.setHealth(p.hp, p.maxhp, false);

@@ -1,4 +1,4 @@
-# NEON//SHIFT — v0.5 "Body Slots"
+# NEON//SHIFT — v0.6 "Lockdown"
 
 Cyberpunk chip-runner prototype. This build keeps the v0.3 level and movement and adds
 impactful combat, a redrawn pixel-art ninja with visible chip transformations, readable enemy AI,
@@ -24,14 +24,28 @@ R-ARM weapon is ever swapped.
 | Action | Keyboard | Gamepad |
 |---|---|---|
 | Move / jump ×2 / dash | `A` `D` · `W` or `Space` · `Shift` | left stick · A · B |
-| **R-ARM** attack (Blade combo or Cannon) | `J` (hold to repeat) | X / RT |
+| **R-ARM** attack | Blade: `J` (3-hit combo) · Cannon: tap `J` to shoot, **hold to charge** a piercing lance | X / RT |
 | Swap Blade ⇄ Cannon | `Q` (or `1` / `2`) | RB |
 | Cannon aim | auto-locks the nearest enemy ahead · hold `I` up / `S` down (`↑` `↓` too) | right stick, or left stick up/down |
-| **L-ARM** Shield | hold `L` — tap just before a hit to **PARRY** | LT / LB |
+| **L-ARM** Shield | hold `L` — tap just before a hit to **PARRY** (perfect timing = slow-mo; any parry makes the next slash a **CRITICAL**) | LT / LB |
 | **LEGS** Blink | `K` (or `E`) | Y |
-| Sword deflect | swing the Blade into an incoming bolt | — |
 | Restart / pause / mute / music | `R` / `P` or `Esc` / `M` / `N` | — |
 | Debug / hitboxes | `F3` / `F4` | — |
+
+## What changed in v0.6
+
+- **Parry belongs to the shield:** the blade no longer deflects bolts. A parry in the first 80 ms of the
+  window is a **PERFECT PARRY**: 0.45 s slow-motion, the bolt returns for 6 damage. Any parry arms a
+  **CRITICAL** on your next blade hit (+3 damage, bigger knockback), so shield and sword combine.
+- **Movement forgiveness:** coyote time (jump up to 0.1 s after leaving a ledge, double jump kept) and a
+  0.12 s jump buffer. Physics constants unchanged.
+- **Dash-cancel:** attacking during a dash ends it early, keeps some momentum and swings immediately.
+- **Charged cannon:** tap for a quick shot, hold `J` to charge (orb grows on the barrel), release for a
+  piercing lance that hits every enemy in its path (2–4 damage).
+- **Lockdown arenas:** laser walls seal the street at x 64–81 (AMBUSH: two extra enemies drop in) and at
+  the Warden before the exit; they drop when everything inside is destroyed.
+- **Warden boss:** 16 HP, boss bar at the bottom, ground-slam shockwaves (jump them) when you are close.
+  At half health it enters **OVERDRIVE**: faster windups and 5-bolt fan volleys.
 
 ## What changed in v0.5
 
@@ -39,8 +53,7 @@ R-ARM weapon is ever swapped.
   can guard, warp and attack at the same time. Only the weapon arm swaps, with one key (`Q`). The HUD shows
   the three slots with their buttons. A shield card lights up while raised. Picking up Shield/Blink no longer
   changes your weapon.
-- **Sword deflect:** a blade swing that meets an enemy bolt sends it back at the shooter for 3 damage
-  (4 on the finisher), with hit-stop and a `DEFLECT!` pop. Shield parries also now home back to the shooter.
+- **Homing reflects:** parried bolts fly back at the enemy that fired them. *(v0.5 also had a sword deflect, removed in v0.6.)*
 - **Aimed cannon:** the arm rotates to the aim angle and bolts fly diagonally. Default auto-aim locks the
   closest enemy ahead (lock-on brackets + dotted sight line), so you can shoot down from catwalks; hold
   `I` / `S` for manual 8-way aim, or use the gamepad right stick.
