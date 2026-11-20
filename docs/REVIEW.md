@@ -182,3 +182,64 @@ Per-frame DOM is clean: `screens.js` only rebuilds on open, `paintSel` runs on i
 - **Do the stages test the mechanics?** **Partly.** Stage 2 is the best: turret parry, timed lasers, a laser gate only blink crosses, drones. Stage 1 teaches blade and cannon well. The spikes and the stage-3 catch-up pickups are taxes rather than tests (R2-016), and lockdowns are blade-only stomps because of R2-004.
 - **Is the chip-switching flow smooth?** **Yes.** Run → jump → blade → Q → cannon fire (same tick) → blink (5.38 u) → attack: every step registered within 1–2 ticks, the swap never pauses, and a cancelled swing "snaps" brighter. The only friction is the leftover blade cooldown and the cannon buffer (R2-011).
 - **Is any of it still placeholder?** The art no longer is. The ninja, enemies, Warden, three themes, pause/chips/victory screens and stage cards all look designed and consistent (see `sheet-*.png`, `screen-*.png`). Remaining rough edges: the reserved CORE card, HUD/card bleeding onto the title (R2-014), centre-screen text clutter (R2-008), and the title controls panel.
+
+---
+
+# Round 3 — re-verification at commit `940d6d7` (pinned)
+
+**Pin.** Reviewed a clean `git archive 940d6d7` (includes `ee78d42`, B's fixes), served by `timeout … npx vite --port 5182 --strictPort`
+(stopped afterwards), probed in Edge via a `timeout`-wrapped Playwright script (`?mem`, frozen loop, `NS.step(n, 1/120)`).
+Later commits `6f3bba1` / `7d368c0` (title controls, README) were not re-probed. Screenshots: `docs/screenshots/review/round3/`.
+Most probes stage the player with `NS.tp` near an arena and then **walk in with real input**, so the lock camera and arena triggers run normally.
+
+## R2 status
+
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| R2-001 | critical | **Fixed** | Same contact loop as R2 (tap L every 0.5 s in contact range, 20 s): **0 staggers** (was 12) and 7 boss windups. Parrying a real attack (the charge) still staggers the boss, followed by `staggerImmune 4.0`; a second parry inside the window shows RESIST and the charge continues. |
+| R2-002 | major | **Fixed** | Arena **19.6 u** < view **21.4 u** (1280×720). Boss off-screen **0 %** of 40 s of random player positions (`boss-bolt-fan.png`, `boss-arena-framed.png`). The crashed, EXPOSED boss sits at the screen edge, partly clipped but readable (`boss-exposed.png`). New side effect: R3-001. |
+| R2-003 | major | **Fixed** | 72 attacks at 2 / 4 / 8 u: bolt 24, charge 27, slam 21. **0 consecutive repeats**; slam always has ≥ 2 other attacks between uses. |
+| R2-004 | major | **Partially fixed → minor** | Poise now breaks on the 2nd flinch: an enforcer starts a counter windup (1 windup), but it still dies to the finisher before the lunge lands (pressed **0.51 s, 0 hits taken**; held J **0.84 s**, 30 % slower, 0 hits). Gunners: 0 windups. Yard lockdown with a simple press-J / tap-L bot: cleared in **2.9 s, 1 HP lost**. I'm downgrading this to minor: fodder dying to one full combo is a defensible design, and real threat now comes from groups, turrets, drones and the boss. It remains a tuning call for the lead. Enemies are **not** now too punishing. |
+| R2-005 | major | **Fixed** (edge case R3-002) | Hold R 0.5 s → nothing; 0.7 s → **stage restart, still Stage 2**. Holding longer does not repeat. R is ignored while paused (the menu swallows the key). A tap shows a "HOLD R" toast. |
+| R2-006 | major | **Fixed** (latent edge R3-003) | Boss at 20 HP, 3 deaths in the arena → boss **70/70**, exactly 1 Warden, no duplicate wave enemies (11 enemies), kills refunded. |
+| R2-007 | minor | **Fixed** | A drone knocked toward x0 gets clamped (x 23.2 vs x0 22.4); the arena stays locked. Membership is now by `arenaId`. |
+| R2-008 | minor | **Fixed** | Toasts moved to a top band (`yard-arena-messages.png`: "AMBUSH — LOCKDOWN" sits between the HUD panels, clear of the catwalk gunner). Duplicate overdrive text removed. |
+| R2-009 | minor | **Fixed** | Holding the shield into a charge → **guard break**, the charge continues, 0 HP lost (it knocks the player clear). |
+| R2-010 | minor | **Fixed** | Running swing vx **6.67** during active (was 9.53). |
+| R2-011 | minor | **Fixed** | Blade → cannon → blade then attack: swing starts at once. A cannon press 50 ms after a shot is buffered and fires. |
+| R2-012 | minor | **Partially fixed** | (c) **Correction to my round-2 note:** render already drew the gameplay `DECOR` (via `STAGE1_DATA.decor`). The real mismatch was the core-theme `barrel → vent` remap (vents drawn with no steam), which `ee78d42` removed, so (c) is fixed. (a)/(b) are open: `stage1.js` is still the mutable current-stage module, and `S.stage` / `STAGE1_DATA` are still parallel views. |
+| R2-013 | minor | **Fixed** | A `v:3` save loads as `future-v3`, keeps unknown fields and merges on commit. Corrupt v2 + intact v1 → `corrupt→v1`, and the raw data is backed up to `neonshift_save_bak`. `NS.tp` / `NS.stageClear` mark the run `debugRun`, so it isn't recorded. |
+| R2-014 | minor | **Fixed** | After `quitToTitle`: `#hud` `display:none`, card hidden (`title-after-quit.png`); CONTINUE has a gap. |
+| R2-015 | minor | **Fixed (code)** | `_fallback` disposes tex, both RTs, 3 materials, geometry, render lists and the renderer. `webglcontextrestored` is still not handled (acceptable). |
+| R2-016 | minor | **Open** (known) | Unchanged. |
+| R2-017 | minor | **Partially fixed** | The title controls panel (fixed by the lead after the pin) was not re-probed. The HUD boss bar still reads **"WARDEN // SECURITY CORE"** (`hud.js:68`) while the arena and victory say CORE SENTINEL (`boss-bolt-fan.png`). |
+
+## Boss playthrough (scripted, human-like)
+
+The bot walks in with real input, then decides each tick from a snapshot that is 0.18 s or 0.28 s old (simulated reaction time):
+- blinks through or jumps the charge (or its telegraph)
+- jumps shockwaves
+- taps L to parry bolts within 2.2 u
+- backs off from slam windups
+- presses J (≥ 0.14 s apart) when the boss is stunned, staggered, recovering or exposed, and pokes when it is idle
+
+The boss resets to full HP when the player dies (R2-006).
+
+| Player | Runs | Result |
+|---|---|---|
+| Bot, 0.18 s reaction | 3 | **3/3 wins**: 19.4 s / 0 deaths, 53 s / 2 deaths, 69.6 s / 3 deaths |
+| Bot, 0.28 s reaction | 3 | **1/3 wins** (217.8 s, 11 deaths); 2 losses at the 240 s cap (14 deaths each, boss at 37 and 62 HP) |
+| Masher (hold J, walk in, no defence) | 3 | **0/3 in 180 s** (19–20 deaths each; best attempt left the boss at 45/70) |
+
+**Fairness verdict: fair, but not too easy anymore and leaning hard.** The cheese is gone and mashing loses. Every attack is telegraphed on-screen and has a counter, and a tidy, reactive player wins in 20–70 s. A player who reacts ~0.1 s later loses most attempts, which may be steep for a final boss with a full reset on death. Not a blocker. Watch for it in a human playtest; levers if needed: +0.1 s on phase-2 windups, or a checkpoint at 50 % HP.
+
+## New issues (round 3)
+
+| ID | Sev | Area | File:line | Description | Repro / evidence | Recommended fix |
+|---|---|---|---|---|---|---|
+| R3-001 | minor | Camera | `game.js` `updateCamera` (arena branch) | When a lockdown engages, the camera target jumps to the arena centre and the 11/s lerp turns that into a **whip pan**: up to **0.595 u per tick (≈71 u/s, 6× run speed)** for ~0.3 s. The same happens when the arena releases. Untested below a 19.6 u view (narrow windows take the clamp branch). | Probe `R2-002`: max camera step during engage. | Ease the arena transition over 0.4–0.5 s (time-based blend between follow and lock targets), or cap camera speed at ~25 u/s. |
+| R3-002 | minor | Flow | `game.js:198-202` | Hold-R still works during the 2.2 s boss-death beat (`bossT`) and the stage-clear card. Holding R after killing the Warden restarts Stage 3 and **throws away the win**. | Probe: boss killed, `bossT=2.2`, hold R 0.83 s → Stage 3 `play`, no boss, victory lost. | Ignore hold-R while `bossT > 0` or `transitionT > 0` (or while `screen !== 'play'`). |
+| R3-003 | minor (latent) | Flow | `enemies.js` `resetArenaOnDeath`; `combat.js` killPlayer | If the player dies while the Warden is `dying`, the arena reset deletes the dying boss and the fight restarts. It is not reachable today (death clears bolts and the arena has no pits or hazards), but a future hazard or DoT would expose it. | Forced pit death during `dying` → Wardens `[]`, stage stays in play. | Skip the reset (or make the player invulnerable) while a boss in that arena is `dying`. |
+
+**Round-3 counts:** of 17 R2 IDs, 13 are fixed, 3 partially fixed (R2-004 → minor, R2-012, R2-017) and 1 open (R2-016). New: 3 minor (R3-001..003).
+**No critical or major issue remains unresolved.**
