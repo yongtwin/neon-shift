@@ -10,10 +10,10 @@ import { PPU, seeded } from '../core/util.js';
 import { FX } from '../effects/fx.js';
 import * as STAGE1 from '../levels/stage1.js';
 import { SCARF_N, muzzleWorld, player } from '../player/player.js';
-import { Compositor } from './compositor.js';
+import { Compositor, getRendererName } from './compositor.js';
 import { HUD } from '../ui/hud.js';
 import { SIGN_COL, SIGN_TEXT, THEMES, THEME_NAMES, buildStrip } from './themes.js';
-export { SIGN_COL, SIGN_TEXT, buildStrip, Compositor };
+export { SIGN_COL, SIGN_TEXT, buildStrip, Compositor, getRendererName };
 /* =====================================================================
    Renderer. Everything is drawn into a low-resolution canvas (≈270px tall).
    The compositor (compositor.js) presents it through WebGL with bloom at an
@@ -333,7 +333,9 @@ export function drawHazards() {
         for (let y = top; y < bot; y += 2) R(X - 1 - (fl && (y >> 1) % 3 === 0 ? 1 : 0), y, 3, 2, (y >> 1) % 4 ? '#ff5a4a' : '#fff0c8');
         R(X, top, 1, bot - top, '#ffe0d0');
         glow(X, (top + bot) >> 1, '#ff3b4a', 18, 0.7); glow(X, bot, '#ff3b4a', 10, 0.6);
-      } else if (warn > 0) {                                                    // telegraph: faint flicker, faster near activation
+      } else if (warn <= 0) {                                                   // idle gate: dim dashed trace so its position always reads
+        g.globalAlpha = 0.35; for (let y = top; y < bot; y += 6) R(X, y, 1, 3, '#7a1a26'); g.globalAlpha = 1;
+      } else {                                                                  // telegraph: faint flicker, faster near activation
         const w = warn, on = ((tm * (8 + 24 * w)) | 0) % 2;
         if (on) { g.globalAlpha = 0.25 + 0.5 * w; for (let y = top; y < bot; y += 4) R(X, y, 1, 2, '#ff6a5a'); g.globalAlpha = 1; glow(X, top, '#ff3b4a', 8, 0.5 * w); }
       }
@@ -500,6 +502,7 @@ export function renderFrame() {
   drawCheckpoints(); drawPortal(); drawPickups();
   drawArenaWalls();
   drawHazards();
+  drawFlashBehind();
   for (const e of enemies) if (e.alive) drawEnemyEntity(e);
   FX.drawBelow();
   drawAimGuide();
@@ -516,10 +519,21 @@ export function renderFrame() {
   if (player.hp <= 2 && player.hp > 0 && Game.running) {                          // low-integrity warning pulse
     g.globalAlpha = 0.07 + 0.06 * Math.sin(tm * 6); R(0, 0, view.W, 4, '#ff2d5f'); R(0, view.H - 4, view.W, 4, '#ff2d5f'); R(0, 0, 4, view.H, '#ff2d5f'); R(view.W - 4, 0, 4, view.H, '#ff2d5f'); g.globalAlpha = 1;
   }
-  FX.drawScreenFlash(view.W, view.H);
+  drawFlashVeil();
   HUD.setGuard(player.guard, player.guardMax, player.guardBreakT > 0);
   HUD.setStage((Game.stage || 0) + 1, (S.stage && S.stage.name) || TH.name);
   present();
+}
+
+/* screen flash, split in two so fighters stay readable (QA D-4): the full-strength colour
+   tints the world BEHIND the characters; over them only a thin veil (max 0.18) remains. */
+function drawFlashBehind() {
+  const f = FX.flash || 0; if (f <= 0.01) return;
+  g.globalAlpha = Math.min(0.6, f); R(0, 0, view.W, view.H, FX.flashCol || '#ffffff'); g.globalAlpha = 1;
+}
+function drawFlashVeil() {
+  const f = FX.flash || 0; if (f <= 0.01) return;
+  g.globalAlpha = Math.min(0.18, f * 0.45); R(0, 0, view.W, view.H, FX.flashCol || '#ffffff'); g.globalAlpha = 1;
 }
 
 const _fx = { flash: 0, hit: 0 };

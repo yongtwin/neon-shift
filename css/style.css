@@ -127,3 +127,20 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;margin-right:3px;text-al
   .brand{font-size:11px;letter-spacing:3px}.stat{font-size:10px}.stat b{font-size:12px}.tiny,.slot-label{font-size:10px}#hint{display:none}.controls{grid-template-columns:1fr}#hero,#overlay[data-mode=title] #hero{width:108px;height:126px}
 }
 @media (max-height:560px){#hud{padding:6px 10px}#hint{display:none}.panel .desc{margin:10px 0}.controls{display:none}}
+
+/* ---------------------------------------------------------------- game-flow screens (DOM from src/ui/screens.js) — match the title look */
+#game .ns-scr{background:radial-gradient(ellipse at 50% 45%,#0a1530b8,#02040ce6 75%);backdrop-filter:blur(3px)}
+#game .ns-panel{position:relative;background:linear-gradient(150deg,#0a1530f4,#04070ff8);border:1px solid #2fe6ff55;box-shadow:0 0 60px #2fe6ff22,inset 0 0 40px #0b648318;
+  clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px));padding:26px 30px}
+#game .ns-panel:before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--cyan),var(--pink),var(--cyan))}
+#game .ns-h{font-size:26px;text-shadow:-2px 0 0 #ff3d9d99,2px 0 0 #2fe6ff99,0 0 16px #2fe6ff77}
+#ns-victory .ns-h{font-size:34px;color:#ffe06b;text-shadow:-2px 0 0 #ff3d9d99,2px 0 0 #2fe6ff99,0 0 22px #ffc43d88;animation:logoFlicker 4.5s steps(1) infinite}
+#game .ns-sub{color:#a9bcdc}
+#game .ns-stats{font-size:15px}#game .ns-stats b{text-shadow:0 0 8px #ffc43d55}
+#game .ns-btn{clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%);transition:background .1s,border-color .1s}
+#game .ns-btn.sel{background:linear-gradient(90deg,#123a5a,#0f2148);box-shadow:0 0 14px #2fe6ff44,inset 3px 0 0 var(--cyan)}
+#game .ns-chip{background:linear-gradient(180deg,#0c1834,#08101f);clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,0 100%)}
+#game .ns-hintline{color:#8ea3c4}
+/* stage intro card: sits under the HUD panels with its own backing strip */
+#game .ns-card{top:38%;padding:10px 34px 12px;background:linear-gradient(90deg,#02051000,#020510c0 18%,#020510c0 82%,#02051000)}
+#game .ns-card .t{font-size:clamp(26px,4.4vw,40px)}

@@ -66,6 +66,9 @@ void main() {
 
 function forceCanvas() { return /[?&]renderer=canvas\b/.test(location.search); }
 
+/** active presentation path: 'webgl' | 'canvas' */
+export function getRendererName() { return Compositor.mode === 'webgl' ? 'webgl' : 'canvas'; }
+
 export const Compositor = {
   mode: 'canvas', name: 'CANVAS 2D', ready: false, failed: false,
   src: null, host: null, renderer: null, gl: null,
@@ -160,7 +163,7 @@ export const Compositor = {
       const flash = fx ? Math.max(fx.flash || 0, fx.hit || 0) : 0;
       G.quad.material = G.mFinal;
       G.mFinal.uniforms.uCA.value = Math.min(1.5, flash * 2) + this.settings.ca;
-      G.mFinal.uniforms.uBloom.value = this.settings.bloom * (1 + 0.6 * Math.min(1, flash));
+      G.mFinal.uniforms.uBloom.value = this.settings.bloom * (1 + 0.25 * Math.min(1, flash));
       r.setRenderTarget(null); r.render(G.scene, G.cam);
     } catch (err) {
       this._fallback('present failed: ' + (err && err.message));
