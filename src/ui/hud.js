@@ -160,7 +160,7 @@ export const HUD = {
       $('ov-controls').style.display = 'none';
       $('start').textContent = '↻ PLAY AGAIN'; $('clear').style.display = 'none';
     } else {
-      set('ov-eyebrow', '◉ EXPERIMENTAL COMBAT BUILD · v0.6');
+      set('ov-eyebrow', '◉ NEON//SHIFT · v1.0');
       set('ov-title', 'NEON<span>//</span>SHIFT');
       set('ov-lead', 'RUN FAST. REWRITE YOUR BODY. NEVER DRAW A BAD HAND.');
       $('ov-controls').style.display = '';

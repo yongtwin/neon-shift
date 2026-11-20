@@ -21,7 +21,8 @@ Cross-area changes: request through the lead (or a note in the owning agent's se
 | # | Task | Owner | Depends | State |
 |---|---|---|---|---|
 | 0 | Baseline tag `baseline-v0.6`, npm/Vite/Three/Playwright toolchain | Lead | — | done |
-| 1 | Convert classic-script globals to ES modules under `src/`, Vite entry, keep `window.NS` test API | A | 0 | todo |
+| 1 | Convert classic-script globals to ES modules under `src/`, Vite entry, keep `window.NS` test API | A | 0 | done (b2b68f6, pixel-identical) |
+| 1 | v0.6 audit → docs/REVIEW.md (2 critical, 18 major, 14 minor) | D | — | done |
 | 1 | Art bible + new ninja rasteriser prototype (`src/art/ninja.js`, new file) | B | — | todo |
 | 1 | Playwright harness + regression suite skeleton on `window.NS` | C | 0 | todo |
 | 1 | Independent audit of v0.6 (code + screenshots) → `docs/REVIEW.md` | D | — | todo |

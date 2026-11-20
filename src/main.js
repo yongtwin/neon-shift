@@ -11,7 +11,7 @@ import { $ } from './core/util.js';
 import { FX } from './effects/fx.js';
 import { ENEMY_DEF, spawnEnemies, totalEnemies } from './enemies/enemies.js';
 import { ANCHOR, BLINK, CANNON, CHARGE_FULL, CHARGE_MIN, GUARD, MOVE, PARRY_WINDOW, PERFECT_WINDOW, SWING, player, resetPlayer } from './player/player.js';
-import { buildArt, resizeView } from './render/render.js';
+import { Compositor, buildArt, resizeView } from './render/render.js';
 import { HUD } from './ui/hud.js';
 import { Screens } from './ui/screens.js';
 import { STAGES } from './levels/stages.js';
@@ -68,6 +68,10 @@ window.NS = {
   get boss() { return Game.boss; },
   get stage() { return { index: Game.stage, ...STAGES[Game.stage], hazards: HAZARDS, t: Game.stageT }; },
   STAGES,
+  /** per-stage level data (copies of the authored stage, independent of the stage being played) */
+  stageData(i) { const s = STAGES[i]; return s ? JSON.parse(JSON.stringify({ id: s.id, name: s.name, worldW: s.worldW, exitX: s.exitX, checkpoints: s.checkpoints, pickups: s.pickups, arenas: s.arenas, spawns: s.spawns, hazards: s.hazards, plats: s.plats })) : null; },
+  get levels() { return STAGES.map((_, i) => this.stageData(i)); },
+  get renderer() { return Compositor.mode === 'webgl' ? 'webgl' : 'canvas'; },
   validateStage,                                                                           // reachability vs jump physics
   laserTimeToOn: h => laserTimeToOn(h, Game.stageT),
   get screens() { return Screens.open; },

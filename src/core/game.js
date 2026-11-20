@@ -42,6 +42,15 @@ export const Game = {
   get totalEnemies() { return this.stageKills0 + totalEnemies(); },   // run kills needed for "all down" in this stage (renderer compares Game.kills to it)
   get stageKills() { return this.kills - this.stageKills0; },
   get boss() { return bossEnemy(); },
+  /** 'title' | 'play' | 'pause' | 'chips' | 'stageclear' | 'victory' */
+  get screen() {
+    if (this.victoryShown && !this.running) return 'victory';
+    if (!this.running) return 'title';
+    if (this.menu === 'chips') return 'chips';
+    if (this.paused) return 'pause';
+    if (this.transitionT > 0) return 'stageclear';
+    return 'play';
+  },
   stageName() { const st = STAGES[this.stage]; return st ? `STAGE ${this.stage + 1} · ${st.name}` : ''; },
 
   /** start a fresh run (title START, PLAY AGAIN, CONTINUE) */
@@ -122,7 +131,7 @@ export const Game = {
     Screens.showPause(false); Screens.showChips(true); this.menu = 'chips'; this.paused = true; SFX.stopMusic();
   },
   quitToTitle() {
-    this.running = false; this.paused = false; this.menu = null; this.transitionT = 0; this.bossT = 0;
+    this.running = false; this.paused = false; this.victoryShown = false; this.menu = null; this.transitionT = 0; this.bossT = 0;
     Screens.hideAll(); SFX.stopMusic(); HUD.setBoss(null);
     HUD.showOverlay('title'); Screens.refreshTitle();
   },

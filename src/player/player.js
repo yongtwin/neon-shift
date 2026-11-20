@@ -337,14 +337,16 @@ export function updatePlayer(dt) {
   }
 
   /* jump with coyote time and a landing buffer; releasing jump while rising cuts the arc */
+  /* the cut is applied BEFORE a new jump starts, so it only shortens a jump begun in an earlier tick
+     (release + re-press inside one tick must still give a full jump — QA D-1) */
+  if (pressed.jumpCut && p.vy > 0 && !p.onGround) p.vy *= MOVE.jumpCut;
+  pressed.jumpCut = false;
   if (pressed.jump) p.jumpBuf = MOVE.jumpBuf;
   pressed.jump = false;
   if (p.jumpBuf > 0 && !broken) {
     if (p.onGround || p.coyote > 0) { doJump(true); p.jumpBuf = 0; }
     else if (p.airJumps < 1) { doJump(false); p.jumpBuf = 0; }
   }
-  if (pressed.jumpCut && p.vy > 0 && !p.onGround) p.vy *= MOVE.jumpCut;
-  pressed.jumpCut = false;
   if (pressed.dash && p.dashCd <= 0 && !broken) doDash();
   pressed.dash = false;
   if (pressed.attack) { if (p.atkStep) p.atkQueued = true; else p.atkBuf = ATK_BUFFER; }
