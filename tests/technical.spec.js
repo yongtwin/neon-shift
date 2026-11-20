@@ -129,14 +129,37 @@ test('NS test API contract is present', async ({ page }) => {
   expect(api.player, 'missing player fields').toEqual([]);
 });
 
-test.fixme('NS.loadStage(i) exists and loads every stage (CLAUDE.md test-hook contract)', async ({ page }) => {
+test('NS.loadStage(i) loads every stage; unknown stages are refused; level data is exposed', async ({ page }) => {
   await boot(page);
-  expect(await page.evaluate(() => typeof NS.loadStage)).toBe('function');
-  for (const i of [0, 1, 2]) expect(await page.evaluate(i => NS.loadStage(i), i)).toBe(true);
+  for (const i of [0, 1, 2]) {
+    expect(await page.evaluate(i => NS.loadStage(i, true), i)).toBe(true);
+    const s = await page.evaluate(() => ({ stage: NS.game.stage, screen: NS.game.screen, n: NS.enemies.length }));
+    expect(s.stage).toBe(i); expect(s.screen).toBe('play'); expect(s.n).toBeGreaterThan(3);
+    const d = await page.evaluate(i => NS.stageData(i), i);
+    expect(d.exitX).toBeGreaterThan(100);
+    expect(d.checkpoints.length).toBeGreaterThan(2);
+  }
+  expect(await page.evaluate(() => NS.loadStage(3))).toBe(false);
+  expect(await page.evaluate(() => NS.levels.length)).toBe(3);
 });
 
-test.fixme('renderer: WebGL compositor active, and the game stays playable with WebGL disabled (canvas fallback)', async ({ page }) => {
-  // ACCEPTANCE (Phase 2, Agent B): expose NS.renderer ('webgl' | 'canvas'); launch with --disable-webgl and
-  // verify the 2D buffer is blitted and a scripted run still completes.
+test('production smoke on every stage: 10 s live play per stage with real keys, no errors', async ({ page }) => {
+  test.setTimeout(90_000);
   await boot(page);
+  await page.evaluate(() => NS.unlockAll());
+  for (const i of [0, 1, 2]) {
+    await page.evaluate(i => NS.loadStage(i, true), i);
+    await page.evaluate(() => { NS.player.maxhp = 999; NS.player.hp = 999; });
+    await page.keyboard.down('KeyD');
+    const t0 = Date.now(); let k = 0;
+    while (Date.now() - t0 < 10_000 && await page.evaluate(() => NS.game.screen === 'play')) {
+      await page.keyboard.press(['KeyJ', 'KeyW', 'KeyK', 'KeyJ', 'ShiftLeft', 'KeyQ', 'KeyJ'][k++ % 7]);
+      await page.waitForTimeout(110);
+      await page.evaluate(() => { NS.player.hp = Math.max(NS.player.hp, 100); });
+    }
+    await page.keyboard.up('KeyD');
+    const s = await page.evaluate(() => ({ x: NS.player.x, stage: NS.game.stage, screen: NS.game.screen }));
+    test.info().annotations.push({ type: `stage${i + 1}`, description: JSON.stringify(s) });
+    expect(s.x).toBeGreaterThan(20);
+  }
 });

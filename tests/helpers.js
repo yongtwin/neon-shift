@@ -2,6 +2,8 @@
 // Every test gets: console/page-error capture (fails the test on any uncaught error),
 // boot + start helpers, deterministic stepping and state snapshots via window.NS.
 import { test as base, expect } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export const DT = 1 / 60;
 
@@ -92,4 +94,39 @@ export const shootAtPlayer = (page, dx = 2, dmg = 1) => page.evaluate(([dx, dmg]
   NS.enemyBullets.push({ x: sx, y: p.y + 1, vx: -p.facing * 14, vy: 0, life: 2, dmg, reflected: false, owner: null });
 }, [dx, dmg]);
 
-export const shot = (page, name) => page.screenshot({ path: `docs/screenshots/qa/${name}.png` });
+/** Screenshot → docs/screenshots/qa/<name>.png. Retries the file write: on Windows another process (an image
+ *  viewer, indexer, another agent reading the PNG) can briefly lock it (seen once: "UNKNOWN: unknown error, open"). */
+export async function shot(page, name) {
+  const buf = await page.screenshot();
+  const file = path.join('docs', 'screenshots', 'qa', `${name}.png`);
+  for (let i = 0; ; i++) {
+    try { fs.writeFileSync(file, buf); return; } catch (e) { if (i >= 9) throw e; await new Promise(r => setTimeout(r, 200)); }
+  }
+}
+
+/** Start a fresh run directly on stage i (NS.loadStage(i, true)) and freeze the live loop. */
+export async function loadStage(page, i, { freeze = true } = {}) {
+  const ok = await page.evaluate(i => NS.loadStage(i, true), i);
+  if (freeze) await page.evaluate(() => { NS.game.freeze = true; });
+  return ok;
+}
+/** Authored data for stage i (checkpoints, pickups, exitX, plats, arenas, hazards …). */
+export const stageData = (page, i) => page.evaluate(i => NS.stageData(i), i);
+
+/**
+ * Step one frame at a time until `cond` (a JS expression string evaluated in the page, e.g. "!NS.player.dead")
+ * is true or `max` frames pass. `god` keeps the player alive (for flow tests that are not about damage).
+ * Returns the number of frames stepped (max+1 if the condition never became true).
+ */
+export const stepUntil = (page, cond, max = 600, { god = false } = {}) => page.evaluate(([cond, max, god]) => {
+  const f = new Function(`return (${cond});`);
+  for (let n = 0; n <= max; n++) {
+    if (f()) return n;
+    if (god) { NS.player.inv = Math.max(NS.player.inv, 0.5); NS.player.hp = NS.player.maxhp; }
+    NS.step(1);
+  }
+  return max + 1;
+}, [cond, max, god]);
+
+/** Keep the player alive / un-hittable during scripted traversal. */
+export const god = page => page.evaluate(() => { NS.player.inv = 999; NS.player.hp = NS.player.maxhp; });

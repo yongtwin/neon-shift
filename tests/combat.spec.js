@@ -220,3 +220,52 @@ test('blink warps forward and damages enemies in its path', async ({ page }) => 
   expect(p.x).toBeGreaterThan(14.5);                         // ~5.3 u warp
   expect((await enemy(page, 0)).hp).toBeLessThanOrEqual(hp - 3);   // blink path damage (3)
 });
+
+test('combat flow with real keys: run → jump → blade → Q cannon → fire → K blink → attack, all respond', async ({ page }) => {
+  await page.evaluate(() => { NS.unlockAll(); NS.tp(6, 0); NS.player.facing = 1; NS.player.inv = 999; });
+  await isolateEnemy(page, 1, 22);
+  await page.evaluate(() => { const e = NS.enemies[1]; e.hp = e.maxhp = 60; });
+  const hp = () => page.evaluate(() => NS.enemies[1].hp);
+  const log = [];
+  // run
+  await page.keyboard.down('KeyD'); await step(page, 30);
+  let p = await P(page); log.push(['run', p.x]); expect(p.x).toBeGreaterThan(9); expect(p.vx).toBeGreaterThan(10);
+  // jump while running
+  await page.keyboard.down('KeyW'); await step(page, 12); await page.keyboard.up('KeyW');
+  p = await P(page); log.push(['jump', p.y]); expect(p.y).toBeGreaterThan(1);
+  await page.evaluate(() => { let n = 0; while (!NS.player.onGround && n++ < 120) NS.step(1); });
+  await page.keyboard.up('KeyD');
+  // blade into the enemy
+  await page.evaluate(() => { NS.tp(NS.enemies[1].x - 1.8, 0); NS.player.facing = 1; });
+  let h0 = await hp();
+  await page.keyboard.press('KeyJ'); await step(page, 3);
+  expect((await P(page)).atkStep).toBeGreaterThan(0);
+  await step(page, 25);
+  log.push(['blade', h0 - await hp()]); expect(await hp()).toBeLessThan(h0);
+  // Q → cannon, fire from range
+  await page.evaluate(() => { let n = 0; while ((NS.player.atkStep || (NS.feel.hitstop > 0)) && n++ < 120) NS.step(1); });
+  await page.keyboard.press('KeyQ'); await step(page, 2);
+  expect((await P(page)).chip).toBe('cannon');
+  await page.evaluate(() => { NS.tp(NS.enemies[1].x - 7, 0); NS.player.facing = 1; });
+  h0 = await hp();
+  await page.keyboard.press('KeyJ'); await step(page, 2);
+  expect(await page.evaluate(() => NS.bullets.length)).toBeGreaterThan(0);
+  await step(page, 40);
+  log.push(['cannon', h0 - await hp()]); expect(await hp()).toBeLessThan(h0);
+  // K blink forward
+  await page.evaluate(() => { NS.tp(NS.enemies[1].x - 12, 0); NS.player.facing = 1; });
+  const xb = (await P(page)).x;
+  await page.keyboard.press('KeyK'); await step(page, 4);
+  p = await P(page); log.push(['blink', p.x - xb]); expect(p.x - xb).toBeGreaterThan(4);
+  // attack straight out of the blink (cannon is still equipped)
+  const nb = await page.evaluate(() => NS.bullets.length);
+  await step(page, 20);
+  await page.keyboard.press('KeyJ'); await step(page, 2);
+  const fired = await page.evaluate(nb => NS.bullets.length > 0 || NS.player.recoil > 0, nb);
+  expect(fired).toBe(true);
+  // and back to the blade, attack again
+  await page.keyboard.press('KeyQ'); await step(page, 15);
+  await page.keyboard.press('KeyJ'); await step(page, 3);
+  p = await P(page); expect(p.chip).toBe('blade'); expect(p.atkStep).toBeGreaterThan(0);
+  test.info().annotations.push({ type: 'flow', description: JSON.stringify(log) });
+});

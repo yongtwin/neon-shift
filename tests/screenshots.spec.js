@@ -1,6 +1,6 @@
 // Evidence screenshots → docs/screenshots/qa/. The sim is frozen and stepped so each shot lands on the
 // exact moment (the live rAF loop keeps rendering the frozen state).
-import { test, expect, boot, start, step, isolateEnemy, shot } from './helpers.js';
+import { test, expect, boot, start, step, isolateEnemy, shot, loadStage, stageData, stepUntil } from './helpers.js';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -41,4 +41,23 @@ test('screenshots: gameplay, combo slash, cannon, shield, blink', async ({ page 
   await page.keyboard.press('KeyK'); await step(page, 3);
   await settle(page); await shot(page, '06-blink');
   expect(await page.evaluate(() => NS.player.x)).toBeGreaterThan(30);
+});
+
+test('screenshots: each stage in live play (stage 1 / 2 / 3)', async ({ page }) => {
+  await boot(page);
+  await page.evaluate(() => NS.unlockAll());
+  const spots = [[0, 0.42], [1, 0.12], [2, 0.22]];          // fraction of the stage where the action is
+  for (const [i, f] of spots) {
+    await loadStage(page, i);
+    const sd = await stageData(page, i);
+    const x = Math.round(sd.exitX * f);
+    await page.evaluate(x => { NS.tp(x, 0); NS.player.inv = 999; }, x);
+    await page.keyboard.down('KeyD');
+    await stepUntil(page, 'false', 90, { god: true });
+    await page.keyboard.press('KeyJ');
+    await step(page, 6);
+    await page.keyboard.up('KeyD');
+    await settle(page);
+    await shot(page, `1${i}-stage${i + 1}-${sd.name.toLowerCase().replace(/\s+/g, '-')}`);
+  }
 });

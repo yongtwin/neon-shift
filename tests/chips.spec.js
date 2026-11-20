@@ -1,7 +1,7 @@
 // Chips: permanent unlocks, persistence, locked chips unusable, switching mid-combat.
-import { test, expect, boot, start, step, P, isolateEnemy, clearEnemies } from './helpers.js';
+import { test, expect, boot, start, step, P, isolateEnemy, clearEnemies, loadStage, stageData } from './helpers.js';
 
-const STORAGE = 'neonshift_chips_v1';   // legacy key; will change with the versioned save (see fixme below)
+const STORAGE = 'neonshift_chips_v1';   // legacy v1 key (migrated into `neonshift_save` {v:2,…})
 
 test('fresh save: only BLADE unlocked, HUD shows 1 / 4', async ({ page }) => {
   await boot(page);
@@ -14,7 +14,8 @@ test('walking over the CANNON pickup unlocks and equips it, and saves it', async
   await boot(page);
   await start(page);
   await clearEnemies(page);
-  await page.evaluate(() => NS.tp(16, 0));
+  const pk = (await stageData(page, 0)).pickups.find(p => p.id === 'cannon');
+  await page.evaluate(x => NS.tp(x, 0), pk.x - 3);
   await page.keyboard.down('KeyD');
   await step(page, 25);
   await page.keyboard.up('KeyD');
@@ -30,11 +31,11 @@ test('walking over the CANNON pickup unlocks and equips it, and saves it', async
 test('unlocks persist across a page reload', async ({ page }) => {
   await boot(page);
   await start(page);
+  await loadStage(page, 2);                                    // stage 3 has catch-up pickups for every chip
   await clearEnemies(page);
-  for (const x of [17, 44, 84]) {                               // cannon, shield, blink pickups
-    await page.evaluate(x => NS.tp(x, 0), x);
-    await page.keyboard.down('KeyD'); await step(page, 20); await page.keyboard.up('KeyD');
-  }
+  const xs = (await stageData(page, 2)).pickups.map(p => p.x);
+  await page.evaluate(x => NS.tp(x, 0), Math.min(...xs) - 2);
+  await page.keyboard.down('KeyD'); await step(page, 50); await page.keyboard.up('KeyD');
   expect((await P(page)).unlocked).toEqual(['blade', 'blink', 'cannon', 'shield']);
   await page.reload();
   await page.waitForFunction(() => window.NS && NS.player);
@@ -135,7 +136,29 @@ test('versioned save: v1 chip array migrates to {v:2, chips}', async ({ page }) 
   expect(v2, 'neonshift_save should hold a versioned object after migration').toMatchObject({ v: 2, chips: ['blade', 'cannon'] });
 });
 
-for (const [label, raw] of [['corrupt JSON', '{oops'], ['future version', JSON.stringify({ v: 99, chips: ['blink'] })],
+test('versioned save: a save from a NEWER build (v:99) is read forward-compatibly and its unknown fields survive', async ({ page }) => {
+  await boot(page, { seed: ['neonshift_save', JSON.stringify({ v: 99, chips: ['blade', 'blink'], stage: 1, best: {}, futureField: 'keep-me' })] });
+  await start(page);
+  expect((await P(page)).unlocked).toEqual(['blade', 'blink']);
+  await page.evaluate(() => NS.unlockAll());                    // forces a save commit
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('neonshift_save')));
+  expect(saved.futureField).toBe('keep-me');
+  expect(saved.v).toBe(99);
+  expect(saved.chips).toEqual(expect.arrayContaining(['blade', 'cannon', 'shield', 'blink']));
+});
+
+test('versioned save: corrupt v2 data falls back to an intact v1 save, and the bad data is backed up', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('__s')) { sessionStorage.setItem('__s', '1'); localStorage.setItem('neonshift_save', '{broken'); localStorage.setItem('neonshift_chips_v1', '["blade","shield"]'); }
+  });
+  await boot(page);
+  expect((await P(page)).unlocked).toEqual(['blade', 'shield']);
+  expect(await page.evaluate(() => NS.save.source)).toMatch(/v1/);
+  const keys = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('neonshift')));
+  expect(keys.length).toBeGreaterThanOrEqual(3);              // save, legacy key, backup of the unreadable data
+});
+
+for (const [label, raw] of [['corrupt JSON', '{oops'],
   ['wrong types', JSON.stringify({ v: 2, chips: 'cannon', stage: 'x', best: [] })], ['array', '[1,2,3]']]) {
   test(`versioned save: ${label} in neonshift_save loads safe defaults without throwing`, async ({ page }) => {
     await boot(page, { seed: ['neonshift_save', raw] });
@@ -146,7 +169,4 @@ for (const [label, raw] of [['corrupt JSON', '{oops'], ['future version', JSON.s
   });
 }
 
-test.fixme('chip collection screen lists every chip with locked / unlocked state', async ({ page }) => {
-  // ACCEPTANCE (Phase 3): a menu screen shows all chips, their body slot and button; locked chips are visibly locked.
-  await boot(page);
-});
+// chip collection screen: see flow.spec.js › "chip collection screen (Tab / C)".

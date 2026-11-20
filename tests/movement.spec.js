@@ -124,15 +124,20 @@ test('movement stays responsive during and after a 3-hit blade combo', async ({ 
   await page.keyboard.up('KeyA');
   expect(p.facing).toBe(-1);
   expect(p.vx).toBeLessThan(-11);
-  // attacking while holding a direction does not lock movement
+  // attacking while holding a direction never locks movement: the swing slows the run (design: wind/act/rec
+  // ground multiplier), but the player keeps advancing and is back to full run speed right after the swing
   await page.keyboard.down('KeyD');
   await step(page, 20);
   const x0 = (await P(page)).x;
   await page.keyboard.press('KeyJ');
   await step(page, 15);
   const x1 = (await P(page)).x;
+  await page.evaluate(() => { let n = 0; while (NS.player.atkStep && n++ < 120) NS.step(1); });
+  await step(page, 15);
+  const v = (await P(page)).vx;
   await page.keyboard.up('KeyD');
-  expect(x1 - x0).toBeGreaterThan(2.5);
+  expect(x1 - x0).toBeGreaterThan(0.8);
+  expect(v).toBeGreaterThan(11);
 });
 
 test('window blur clears held keys, and the next key press controls the player again', async ({ page }) => {

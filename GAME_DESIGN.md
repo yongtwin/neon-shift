@@ -55,7 +55,11 @@ Large armoured security mech in a locked arena. Readable, telegraphed attacks:
 - **Bolt fan** (windup glow → 3/5-bolt spread): block or parry; perfect parry reflects for big damage.
 - **Ground slam** (raises fists, flashes) → shockwaves both directions: jump them.
 - **Charge** (crouches, red line telegraph) → rushes across arena: blink through it to punish its back.
-- Phase 2 at 50% HP: faster windups, combined patterns. Defeat → chip/ending → victory screen.
+- Phase 2 (OVERDRIVE) at 50% HP: faster windups, chained patterns. Dying in phase 2 respawns you with the
+  boss at 50% (mid-fight checkpoint). 80 HP; front armour halves blade damage, EXPOSED takes ×1.5.
+  Defeat → 2.2 s death sequence (restart/death ignored) → victory screen.
+- Tuning target (measured with bots): 0.28 s-reaction player wins reliably; fast players can't cheese it
+  under ~30 s; mashing doesn't work.
 
 ## Enemies
 | Enemy | Behaviour | Counter |

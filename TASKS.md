@@ -23,12 +23,15 @@ Cross-area changes: request through the lead (or a note in the owning agent's se
 | 0 | Baseline tag `baseline-v0.6`, npm/Vite/Three/Playwright toolchain | Lead | — | done |
 | 1 | Convert classic-script globals to ES modules under `src/`, Vite entry, keep `window.NS` test API | A | 0 | done (b2b68f6, pixel-identical) |
 | 1 | v0.6 audit → docs/REVIEW.md (2 critical, 18 major, 14 minor) | D | — | done |
-| 1 | Art bible + new ninja rasteriser prototype (`src/art/ninja.js`, new file) | B | — | todo |
-| 1 | Playwright harness + regression suite skeleton on `window.NS` | C | 0 | todo |
-| 1 | Independent audit of v0.6 (code + screenshots) → `docs/REVIEW.md` | D | — | todo |
-| 2 | Combat feel pass (blade 3-hit, cannon, shield/parry, blink), versioned save, chip registry with body slots | A | 1 | todo |
-| 2 | Integrate new ninja + transformations, Three.js compositor w/ Canvas fallback, VFX | B | 1 | todo |
-| 3 | 3 stages (Neon District, Security Complex, Cyber Core), checkpoints, boss, title/pause/victory/game-over flow | A | 2 | todo |
-| 3 | Stage themes, boss art, chip collection screen, menus visuals | B | 2 | todo |
-| 4 | Full regression + review rounds, fixes (max 4 rounds/feature) | all | 3 | todo |
-| 5 | Docs, production build verification, release notes | Lead | 4 | todo |
+| 1 | Art bible + new ninja rasteriser prototype (`src/art/ninja.js`, new file) | B | — | done |
+| 1 | Playwright harness + regression suite skeleton on `window.NS` | C | 0 | done |
+| 1 | Independent audit of v0.6 (code + screenshots) → `docs/REVIEW.md` | D | — | done |
+| 2 | Combat feel pass (blade 3-hit, cannon, shield/parry, blink), versioned save, chip registry with body slots | A | 1 | done |
+| 2 | Integrate new ninja + transformations, Three.js compositor w/ Canvas fallback, VFX | B | 1 | done |
+| 3 | 3 stages (Neon District, Security Complex, Cyber Core), checkpoints, boss, title/pause/victory/game-over flow | A | 2 | done |
+| 3 | Stage themes, boss art, chip collection screen, menus visuals | B | 2 | done |
+| 4 | Full regression + review rounds, fixes (max 4 rounds/feature) | all | 3 | done |
+| 5 | Docs, production build verification, release notes | Lead | 4 | done |
+
+## Open (post-v1.0)
+See PROGRESS.md "Known issues": D-4 finisher flash, R2-004 residual, R2-016 stage taxes, human playtest, gamepad/touch/real-GPU checks.
