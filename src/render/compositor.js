@@ -120,7 +120,13 @@ export const Compositor = {
     this.mode = 'canvas'; this.name = 'CANVAS 2D'; this.failed = why;
     document.body.classList.remove('gl-on');
     if (this.src) this.src.style.visibility = '';
-    if (this.gl) { try { this.gl.renderer.domElement.remove(); this.gl.renderer.dispose(); } catch (_) { /* ignore */ } this.gl = null; }
+    const G = this.gl;
+    if (G) {                                                     // free every GPU resource we created
+      for (const fn of [() => G.tex.dispose(), () => G.rtA.dispose(), () => G.rtB.dispose(), () => G.mBright.dispose(), () => G.mBlur.dispose(),
+        () => G.mFinal.dispose(), () => G.quad.geometry.dispose(), () => G.renderer.renderLists.dispose(), () => G.renderer.dispose(),
+        () => G.renderer.domElement.remove()]) { try { fn(); } catch (_) { /* context may already be gone */ } }
+      this.gl = null; this.renderer = null;
+    }
     this._label();
     return this.mode;
   },

@@ -144,3 +144,10 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;margin-right:3px;text-al
 /* stage intro card: sits under the HUD panels with its own backing strip */
 #game .ns-card{top:38%;padding:10px 34px 12px;background:linear-gradient(90deg,#02051000,#020510c0 18%,#020510c0 82%,#02051000)}
 #game .ns-card .t{font-size:clamp(26px,4.4vw,40px)}
+
+/* ---------------------------------------------------------------- menus own the screen: no in-game UI behind title / complete overlays */
+body.ov-on #hud,body.ov-on #hint,body.ov-on #boss,body.ov-on #combo,body.ov-on #toast,body.ov-on #game .ns-card{display:none!important}
+/* one band per message: toasts top-centre (between the HUD panels), stage card mid-upper, hint bottom */
+#toast{top:16px!important;font-size:16px;letter-spacing:4px;max-width:min(46vw,520px);white-space:normal}
+@media (max-width:1100px){#toast{top:auto!important;bottom:56px;font-size:13px}}
+#overlay .btn{margin:0 10px 8px 0}#overlay .btn.secondary{margin-left:0}

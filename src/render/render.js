@@ -161,7 +161,7 @@ const PROP_SETS = {
   complex: [['crates', 0.3], ['barrel', 0.2], ['terminal', 0.25], ['vent', 0.25]],
   core: [['terminal', 0.45], ['vent', 0.35], ['crates', 0.2]],
 };
-const PROP_REMAP = { complex: { sign: 'terminal', lamp: 'lamp' }, core: { sign: 'terminal', barrel: 'vent' } };
+const PROP_REMAP = { complex: { sign: 'terminal', lamp: 'lamp' }, core: { sign: 'terminal' } };
 function buildDecor(st) {
   const r = seeded(hashId(st.id) % 1e9), decor = [], fg = [];
   const keep = [...(st.spawns || []).map(q => q.x), ...(st.pickups || []).map(q => q.x), ...(st.checkpoints || []), st.exitX];

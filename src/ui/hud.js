@@ -151,6 +151,7 @@ export const HUD = {
   showOverlay(mode, info) {
     const ov = $('overlay'); ov.style.display = 'flex';
     ov.dataset.mode = mode;
+    document.body.classList.add('ov-on');
     const set = (id, html) => { $(id).innerHTML = html; };
     if (mode === 'complete') {
       set('ov-eyebrow', '◉ RUN COMPLETE');
@@ -167,5 +168,5 @@ export const HUD = {
       $('start').textContent = '▶ START RUN'; $('clear').style.display = '';
     }
   },
-  hideOverlay() { $('overlay').style.display = 'none'; },
+  hideOverlay() { $('overlay').style.display = 'none'; document.body.classList.remove('ov-on'); },
 };
