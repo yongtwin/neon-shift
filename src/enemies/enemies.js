@@ -33,13 +33,13 @@ import { HUD } from '../ui/hud.js';
 export const ENEMY_DEF = {
   gunner:   { hp: 5,  hw: 0.55, h: 1.9, speed: 1.5, aggro: 14, sight: 3.3 },
   enforcer: { hp: 6,  hw: 0.55, h: 2.0, speed: 1.8, aggro: 11, sight: 3.3 },
-  warden:   { hp: 70, hw: 1.4,  h: 4.6, speed: 1.3, aggro: 40, sight: 6 },          // drawn at 1.7x (≈112 px)
+  warden:   { hp: 80, hw: 1.4,  h: 4.6, speed: 1.3, aggro: 40, sight: 6 },          // drawn at 1.7x (≈112 px)
   drone:    { hp: 3,  hw: 0.5,  h: 0.9, speed: 2.2, aggro: 11, sight: 7, fly: true },
   turret:   { hp: 4,  hw: 0.55, h: 1.1, speed: 0,   aggro: 13, sight: 8, fixed: true, bladeProof: true },
 };
 export const BOSS = {
-  slamRange: 5.5, chargeSpeed: 17, chargeDmg: 2, crashStun: 1.4, crashStunP2: 1.1, slamExpose: 0.8,
-  windup: { bolt: 0.8, slam: 0.75, charge: 0.95 }, windupP2: { bolt: 0.55, slam: 0.5, charge: 0.65 },
+  slamRange: 5.5, chargeSpeed: 17, chargeDmg: 2, crashStun: 1.7, crashStunP2: 1.4, slamExpose: 0.8,
+  windup: { bolt: 0.8, slam: 0.75, charge: 0.95 }, windupP2: { bolt: 0.7, slam: 0.65, charge: 0.8 },
   pattern: ['bolt', 'charge', 'bolt', 'slam'], patternP2: ['charge', 'bolt', 'slam', 'charge', 'bolt'],
   exposedMul: 1.5, armoredMul: 0.5, deathTime: 2.2, muzzleY: 2.7, staggerImmune: 4,
   weights: { slam: 3, bolt: 2, charge: 2 }, slamGap: 2,              // R2-003: weighted pick, never twice in a row, ≥2 other attacks between slams
@@ -136,6 +136,7 @@ export function updateEnemy(e, dt) {
 
   if (e.kind === 'warden' && !e.phase2 && e.hp <= e.maxhp / 2) {          // boss phase 2: OVERDRIVE
     e.phase2 = true; e.flash = 0.3; e.cooldown = 0.5; e.pat = 0;
+    if (Game.arena && Game.arena.boss) Game.arena.p2Checkpoint = true;      // dying after this restarts the fight at OVERDRIVE / 50 %
     if (e.state !== 'charge') setState(e, 'alert');
     FX.ring(e.x, e.y + 1.2, 4, 60, 0.4, EN.r1);
     Feel.screenFlash(0.3, '#ff6a5a'); Feel.kick(5); SFX.play('charge');
@@ -451,7 +452,7 @@ const liveIn = a => enemies.some(e => e.alive && inArena(e, a));
 
 /** R2-006: dying inside a lockdown resets it — its wave respawns at full HP (boss included), kills of it are refunded */
 export function resetArenaOnDeath(a) {
-  if (!a) return;
+  if (!a || enemies.some(e => e.dying && e.arenaId === a.id)) return;
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
     if (e.arenaId !== a.id) continue;
@@ -465,7 +466,7 @@ export function resetArenaOnDeath(a) {
 }
 
 /* ------------------------------------------------------------------ lockdown arenas */
-export function resetArenas() { for (const a of ARENAS) { a.spawned = false; a.cleared = false; a.wallT = 0; } Game.arena = null; }
+export function resetArenas() { for (const a of ARENAS) { a.spawned = false; a.cleared = false; a.wallT = 0; a.p2Checkpoint = false; } Game.arena = null; }
 export function updateArenas(dt) {
   const p = player;
   for (const a of ARENAS) a.wallT = Math.max(0, a.wallT - dt);
@@ -480,7 +481,10 @@ export function updateArenas(dt) {
         for (const w of a.wave) {
           const e = makeEnemy({ ...w, arenaId: a.id }, nextId()); e.flash = 0.2;
           e.minX = Math.max(e.minX, a.x0 + 0.8); e.maxX = Math.min(e.maxX, a.x1 - 0.8);
-          if (e.kind === 'warden') { e.state = 'intro'; e.cooldown = 1.5; e.facing = -1; }
+          if (e.kind === 'warden') {
+            e.state = 'intro'; e.cooldown = 1.5; e.facing = -1;
+            if (a.p2Checkpoint) { e.hp = e.maxhp * 0.5; e.phase2 = true; HUD.toast('WARDEN // OVERDRIVE — CHECKPOINT', '#ffe06b', 1.6); }
+          }
           else { e.state = 'alert'; e.cooldown = 0.8; }
           enemies.push(e); FX.ring(e.x, e.y + 1, 3, 26, 0.3, EN.r1); FX.bits(e.x, e.y + 1, EN.r1, 12);
         }

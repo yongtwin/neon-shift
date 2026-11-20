@@ -531,7 +531,7 @@ export function respawn() {
 /* falling into a pit is a death: it goes through killPlayer → respawn like any other death */
 export function pitFall() {
   const p = player;
-  if (p.dead) return;
+  if (p.dead || Game.outcomeLocked) return;
   Feel.screenFlash(0.35, '#ff3d6d'); SFX.play('hurt');
   killPlayer(0);
   p.pit = true; p.vx = 0; p.vy = 0;

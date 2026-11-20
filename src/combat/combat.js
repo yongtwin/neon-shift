@@ -135,7 +135,7 @@ export function defendCheck(srcX) {
 /* o: { bullet } | { melee: enemy } | { contact: enemy } */
 export function hurtPlayer(dmg, srcX, o = {}) {
   const p = player;
-  if (p.dead) return 'ignored';
+  if (p.dead || Game.outcomeLocked) return 'ignored';                  // R3-003: nothing can kill you while the boss dies
   const def = o.hazard ? null : defendCheck(srcX);                     // the shield does not stop lasers / spikes
   if (def && o.contact) {                                               // body contact into a raised shield: knock apart.
     if (p.blockFlash <= 0) doBlock(o, GUARD.costContact);               // contact is NEVER a parry (R2-001): only bolts / telegraphed melee

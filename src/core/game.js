@@ -42,6 +42,8 @@ export const Game = {
   get totalEnemies() { return this.stageKills0 + totalEnemies(); },   // run kills needed for "all down" in this stage (renderer compares Game.kills to it)
   get stageKills() { return this.kills - this.stageKills0; },
   get boss() { return bossEnemy(); },
+  /** true while the win is being played out (boss dying, boss-death beat, stage-clear card): no restart, no death */
+  get outcomeLocked() { const b = bossEnemy(); return this.bossT > 0 || this.transitionT > 0 || !!(b && b.dying); },
   /** 'title' | 'play' | 'pause' | 'chips' | 'stageclear' | 'victory' */
   get screen() {
     if (this.victoryShown && !this.running) return 'victory';
@@ -140,6 +142,7 @@ export const Game = {
   slowmo(t) { Feel.slowmo(t); },
 };
 
+export const CAM_MAX_SPEED = 30;
 export function updateCamera(dt, snap) {
   const viewW = view.W / PPU, p = player;
   Game.lead += (p.facing * viewW * 0.1 - Game.lead) * Math.min(1, dt * 4);
@@ -153,7 +156,9 @@ export function updateCamera(dt, snap) {
   const ty = Math.max(0, (p.y - 2.5) * 0.55);
   if (!Number.isFinite(tx)) tx = p.x;
   const k = snap ? 1 : Math.min(1, dt * 11), ky = snap ? 1 : Math.min(1, dt * 5);
-  view.camX += (tx - view.camX) * k; view.camY += (ty - view.camY) * ky;
+  let step = (tx - view.camX) * k;
+  if (!snap) step = clamp(step, -CAM_MAX_SPEED * dt, CAM_MAX_SPEED * dt);   // R3-001: eased lockdown framing, max 30 u/s
+  view.camX += step; view.camY += (ty - view.camY) * ky;
 }
 
 /* =====================================================================
@@ -196,7 +201,7 @@ export function tick(dt) {
 export function advance(realDt) {
   Game.time += realDt;
   HUD.update(realDt); Screens.tick(realDt);
-  if (Game.running && !Game.paused && keys.KeyR) {                       // R2-005: hold R 0.6 s → restart this stage (never the run)
+  if (Game.running && !Game.paused && keys.KeyR && !Game.outcomeLocked) {                       // R2-005: hold R 0.6 s → restart this stage (never the run)
     Game.rHold += realDt;
     if (Game.rHold >= 0.6) { Game.rHold = -99; Game.restartStage(); HUD.toast('STAGE RESTARTED', '#8ea3c4', 1.2); }
   } else if (!keys.KeyR) Game.rHold = 0;
