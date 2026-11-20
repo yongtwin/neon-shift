@@ -65,6 +65,7 @@ export const Screens = {
     c.classList.add('on'); this.cardLeft = dur;
   },
   /** called every rendered frame with real dt (the card follows game time, so NS.step drives it too) */
+  hideCard() { this.cardLeft = 0; this.card.classList.remove('on'); },
   tick(dt) { if (this.cardLeft > 0) { this.cardLeft -= dt; if (this.cardLeft <= 0) this.card.classList.remove('on'); } },
   stageIntro(st, i) { this.showCard(`STAGE ${i + 1} / 3`, st.name, st.intro || '', st.theme === 'complex' ? '#a58bff' : st.theme === 'core' ? '#ff4fc0' : '#2fe6ff'); },
   stageClear(st, i, s) { this.showCard('STAGE CLEAR', st.name, `TIME ${fmtTime(s.stageTime)} · KILLS ${s.kills} · DEATHS ${s.deaths}`, '#ffe06b', 1.6); },
@@ -150,7 +151,7 @@ export const Screens = {
     if (!start) return;
     let b = document.getElementById('continue');
     if (!b) {
-      b = el('button', 'btn'); b.id = 'continue';
+      b = el('button', 'btn'); b.id = 'continue'; b.style.marginLeft = '10px';
       b.addEventListener('click', () => this.game.newRun(Save.data.stage));
       start.insertAdjacentElement('afterend', b);
     }

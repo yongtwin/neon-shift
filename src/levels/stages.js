@@ -108,7 +108,7 @@ export const STAGES = [
       { id: 'ring', x0: 22.4, x1: 45.6, trigger: 24.5, title: 'CORE RING — LOCKDOWN', wave: [{ x: 34, y: 3.6, kind: 'turret' }, { x: 30, kind: 'drone', y: 3.0, range: 3 }, { x: 40, kind: 'enforcer' }, { x: 44, kind: 'gunner' }] },
       { id: 'core', x0: 86.4, x1: 107.6, trigger: 88.5, title: 'DATA VAULT — LOCKDOWN', wave: [{ x: 97, kind: 'enforcer' }, { x: 104, kind: 'enforcer' }, { x: 106.5, kind: 'turret' }, { x: 100, kind: 'drone', y: 3.6, range: 3 }, { x: 93, kind: 'gunner' }] },
       { id: 'gauntlet', x0: 154.4, x1: 175.6, trigger: 156.5, title: 'GAUNTLET — LOCKDOWN', wave: [{ x: 166, kind: 'enforcer' }, { x: 170, kind: 'enforcer' }, { x: 162, kind: 'drone', y: 3.5, range: 3 }, { x: 174.5, kind: 'turret' }, { x: 164, y: 3.8, kind: 'gunner' }] },
-      { id: 'boss', x0: 198.4, x1: 232.6, trigger: 201, title: 'WARDEN // CORE SENTINEL', wave: [{ x: 224, kind: 'warden' }], boss: true },
+      { id: 'boss', x0: 204.4, x1: 224, trigger: 206.5, title: 'WARDEN // CORE SENTINEL', wave: [{ x: 219, kind: 'warden' }], boss: true },   // 19.6 u: fits a 20 u view
     ],
     hazards: [
       { type: 'laser', x: 56, y0: 0, y1: 7, period: 2.2, onT: 0.9, warnT: 0.45 },

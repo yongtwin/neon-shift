@@ -57,7 +57,7 @@ export function switchChip(id, silent) {                                // R-ARM
   const p = player;
   if (!WEAPONS.includes(id) || !p.unlocked.has(id) || p.chip === id || p.dead) return false;
   const cancelled = p.atkStep > 0 || p.charging;
-  p.chip = id; p.equip.rarm = id; p.xf = 0;
+  p.chip = id; p.equip.rarm = id; p.xf = 0; p.cd.blade = 0; p.heldGap = 0;          // a cancelled swing leaves no dead input (R2-011a)
   p.atkStep = 0; p.atkU = 0; p.atkPhase = ''; p.atkQueued = false; p.lungeT = 0;
   p.muzzle = 0; p.recoil = 0; p.charging = false; p.chargeT = 0; p.charge = 0;
   HUD.setActive(id, true);

@@ -2,7 +2,7 @@ import { CHIP_ORDER, cycleChipDir, swapWeapon, switchChip } from '../chips/chips
 import { updateBullets, updateDebugBoxes } from '../combat/combat.js';
 import { Feel } from '../combat/feel.js';
 import { SFX } from './audio.js';
-import { clearPressed, pollGamepad } from './input.js';
+import { clearPressed, keys, pollGamepad } from './input.js';
 import { Save } from './save.js';
 import { S, bullets, enemies, enemyBullets } from './state.js';
 import { $, PPU, clamp, rnd } from './util.js';
@@ -31,7 +31,7 @@ export const Game = {
   running: false, paused: false, freeze: false, time: 0, runTime: 0, frames: 0, fps: 60,
   kills: 0, combo: 0, comboT: 0, bestCombo: 0, showBoxes: false, lead: 0, viewer: null, simError: null,
   arena: null, stage: 0, alpha: 0, ticks: 0, stageT: 0, deaths: 0, stageDeaths: 0, stageKills0: 0, stageTime0: 0,
-  transitionT: 0, bossT: 0, victoryShown: false, menu: null,
+  transitionT: 0, bossT: 0, victoryShown: false, menu: null, rHold: 0, debugRun: false,
 
   focus() { try { S.gameEl.focus({ preventScroll: true }); } catch { S.gameEl.focus(); } },
   selectChip(id) { if (id && this.running && !this.paused) switchChip(id); },
@@ -55,7 +55,7 @@ export const Game = {
 
   /** start a fresh run (title START, PLAY AGAIN, CONTINUE) */
   newRun(i = 0) {
-    this.kills = 0; this.bestCombo = 0; this.runTime = 0; this.deaths = 0; this.victoryShown = false;
+    this.kills = 0; this.bestCombo = 0; this.runTime = 0; this.deaths = 0; this.victoryShown = false; this.debugRun = false;
     return this.loadStage(i);
   },
   restart() { return this.newRun(0); },                       // legacy name (title START button, R key, tests)
@@ -109,7 +109,7 @@ export const Game = {
     if (this.victoryShown) return;
     this.victoryShown = true; this.running = false; this.paused = false;
     SFX.stopMusic();
-    Save.recordRun({ time: this.runTime, kills: this.kills, combo: this.bestCombo });
+    if (!this.debugRun) Save.recordRun({ time: this.runTime, kills: this.kills, combo: this.bestCombo });   // R2-013c: skipped/test runs are not records
     HUD.setBoss(null);
     Screens.showVictory({ time: this.runTime, kills: this.kills, bestCombo: this.bestCombo, chips: player.unlocked.size, deaths: this.deaths, bestTime: Save.data.best.time });
   },
@@ -132,7 +132,7 @@ export const Game = {
   },
   quitToTitle() {
     this.running = false; this.paused = false; this.victoryShown = false; this.menu = null; this.transitionT = 0; this.bossT = 0;
-    Screens.hideAll(); SFX.stopMusic(); HUD.setBoss(null);
+    Screens.hideAll(); Screens.hideCard(); SFX.stopMusic(); HUD.setBoss(null);
     HUD.showOverlay('title'); Screens.refreshTitle();
   },
   snapCamera() { updateCamera(1, true); },
@@ -145,6 +145,11 @@ export function updateCamera(dt, snap) {
   Game.lead += (p.facing * viewW * 0.1 - Game.lead) * Math.min(1, dt * 4);
   let tx = p.x + Game.lead + (p.dash > 0 ? p.facing * 1.2 : 0);
   tx = clamp(tx, viewW / 2 - 3, WORLD_W - viewW / 2 + 2);
+  const A = Game.arena;
+  if (A) {                                                             // R2-002: lockdowns are framed, never followed past their walls
+    const w = A.x1 - A.x0;
+    tx = w > viewW ? clamp(tx, A.x0 - 0.5 + viewW / 2, A.x1 + 0.5 - viewW / 2) : (A.x0 + A.x1) / 2;
+  }
   const ty = Math.max(0, (p.y - 2.5) * 0.55);
   if (!Number.isFinite(tx)) tx = p.x;
   const k = snap ? 1 : Math.min(1, dt * 11), ky = snap ? 1 : Math.min(1, dt * 5);
@@ -191,6 +196,10 @@ export function tick(dt) {
 export function advance(realDt) {
   Game.time += realDt;
   HUD.update(realDt); Screens.tick(realDt);
+  if (Game.running && !Game.paused && keys.KeyR) {                       // R2-005: hold R 0.6 s → restart this stage (never the run)
+    Game.rHold += realDt;
+    if (Game.rHold >= 0.6) { Game.rHold = -99; Game.restartStage(); HUD.toast('STAGE RESTARTED', '#8ea3c4', 1.2); }
+  } else if (!keys.KeyR) Game.rHold = 0;
   pollGamepad();
 
   if (!Game.running) {                                                 // title / results: slow cinematic pan

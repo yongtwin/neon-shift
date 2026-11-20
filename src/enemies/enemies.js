@@ -41,7 +41,8 @@ export const BOSS = {
   slamRange: 5.5, chargeSpeed: 17, chargeDmg: 2, crashStun: 1.4, crashStunP2: 1.1, slamExpose: 0.8,
   windup: { bolt: 0.8, slam: 0.75, charge: 0.95 }, windupP2: { bolt: 0.55, slam: 0.5, charge: 0.65 },
   pattern: ['bolt', 'charge', 'bolt', 'slam'], patternP2: ['charge', 'bolt', 'slam', 'charge', 'bolt'],
-  exposedMul: 1.5, armoredMul: 0.5, deathTime: 2.2, muzzleY: 2.7,
+  exposedMul: 1.5, armoredMul: 0.5, deathTime: 2.2, muzzleY: 2.7, staggerImmune: 4,
+  weights: { slam: 3, bolt: 2, charge: 2 }, slamGap: 2,              // R2-003: weighted pick, never twice in a row, ≥2 other attacks between slams
 };
 const TURRET_AIM_MIN = -60 * DEG, TURRET_AIM_MAX = 80 * DEG;
 
@@ -62,13 +63,15 @@ export function makeEnemy(spec, i) {
     pause: 0, cooldown: 1 + (i % 3) * 0.4, tele: 0, flash: 0, stun: 0, kvx: 0, recoil: 0, muzzle: 0, shake: 0,
     alive: true, shots: 0, shotT: 0, lungeHit: false, lostT: 0, armor: spec.kind === 'warden',
     vy: 0, baseY: y, flinchN: 0, flinchT: 0, armorT: 0, counter: false, aim: 0, mount: spec.mount || 'floor',
-    attack: '', phase2: false, exposed: 0, impact: 0, dieU: 0, pat: 0, dying: false, deadT: 0, tx: 0, ty: 0,
+    attack: '', phase2: false, exposed: 0, impact: 0, dieU: 0, staggerImmune: 0, lastAtk: '', sinceSlam: 9, arenaId: spec.arenaId || null, pat: 0, dying: false, deadT: 0, tx: 0, ty: 0,
     sight: y > 0 && !d.fly ? Math.max(d.sight, y + 2.5) : d.sight,
   };
 }
 /** every enemy of the stage, arena waves included (so the HUD total never jumps) */
 export function totalEnemies() { return SPAWNS.length + ARENAS.reduce((n, a) => n + a.wave.length, 0); }
-export function spawnEnemies() { enemies.length = 0; SPAWNS.forEach((s, i) => enemies.push(makeEnemy(s, i))); }
+let idSeq = 0;
+const nextId = () => idSeq++;
+export function spawnEnemies() { enemies.length = 0; idSeq = 0; SPAWNS.forEach(s => enemies.push(makeEnemy(s, nextId()))); }
 export const bossEnemy = () => enemies.find(e => e.kind === 'warden') || null;
 
 /* fire a bolt along angle `ang` (rad, +up, relative to facing) from (x0, y0) */
@@ -101,7 +104,7 @@ export function updateEnemy(e, dt) {
   e.prevX = e.x; e.prevY = e.y;
   e.t += dt; e.st += dt;
   e.flash = Math.max(0, e.flash - dt); e.recoil = Math.max(0, e.recoil - dt / 0.16); e.muzzle = Math.max(0, e.muzzle - dt);
-  e.shake = Math.max(0, e.shake - dt); e.cooldown -= dt; e.exposed = Math.max(0, e.exposed - dt);
+  e.shake = Math.max(0, e.shake - dt); e.cooldown -= dt; e.exposed = Math.max(0, e.exposed - dt); e.staggerImmune = Math.max(0, e.staggerImmune - dt);
   if (e.flinchT > 0) { e.flinchT -= dt; if (e.flinchT <= 0) e.flinchN = 0; }
   if (e.armorT > 0 && e.stun <= 0) e.armorT = Math.max(0, e.armorT - dt);   // super-armour counts down after the flinch
 
@@ -117,6 +120,8 @@ export function updateEnemy(e, dt) {
     }
     e.x = d.fly ? nx : clamp(nx, e.minX, e.maxX); e.kvx *= Math.exp(-dt * 9);
   } else e.kvx = 0;
+  const A = Game.arena;
+  if (A && d.fly && inArena(e, A)) e.x = clamp(e.x, A.x0 + 0.8, A.x1 - 0.8);   // R2-007: flyers stay inside the lockdown
   if (!d.fly && !d.fixed && (e.vy || e.y > e.baseY)) {
     e.vy -= 34 * dt; e.y += e.vy * dt;
     if (e.y <= e.baseY) { if (e.vy < -4) FX.dust(e.x, e.baseY, 4, 0); e.y = e.baseY; e.vy = 0; }
@@ -132,7 +137,7 @@ export function updateEnemy(e, dt) {
   if (e.kind === 'warden' && !e.phase2 && e.hp <= e.maxhp / 2) {          // boss phase 2: OVERDRIVE
     e.phase2 = true; e.flash = 0.3; e.cooldown = 0.5; e.pat = 0;
     if (e.state !== 'charge') setState(e, 'alert');
-    FX.text('OVERDRIVE', e.x, e.y + e.h + 1, EN.r2, 1.2); FX.ring(e.x, e.y + 1.2, 4, 60, 0.4, EN.r1);
+    FX.ring(e.x, e.y + 1.2, 4, 60, 0.4, EN.r1);
     Feel.screenFlash(0.3, '#ff6a5a'); Feel.kick(5); SFX.play('charge');
     HUD.toast('WARDEN // OVERDRIVE', '#ff6a5a', 1.6);
   }
@@ -313,6 +318,22 @@ function updateTurret(e, dt, dxp, dist, sees) {
 }
 
 /* ------------------------------------------------------------------ WARDEN // CORE SENTINEL */
+/* R2-003: weighted choice with anti-repeat. Proximity only tilts the weights; slam needs ≥ slamGap
+   other attacks since the last one, and the same attack never comes twice in a row. */
+export function chooseBossAttack(e, dist) {
+  const W = BOSS.weights, w = {
+    slam: e.sinceSlam >= BOSS.slamGap ? W.slam * (dist < BOSS.slamRange ? 1.5 : 0.4) : 0,
+    bolt: W.bolt * (dist > 4 ? 1.4 : 0.8),
+    charge: W.charge * (dist > 6 ? 1.4 : 0.9),
+  };
+  if (e.lastAtk) w[e.lastAtk] = 0;
+  const tot = w.slam + w.bolt + w.charge;
+  let r = Math.random() * tot, atk = 'bolt';
+  for (const k of ['slam', 'bolt', 'charge']) { if (r < w[k]) { atk = k; break; } r -= w[k]; }
+  e.sinceSlam = atk === 'slam' ? 0 : e.sinceSlam + 1; e.lastAtk = atk;
+  (e.atkLog || (e.atkLog = [])).push(atk);
+  return atk;
+}
 function wardenWindup(e, attack) {
   setState(e, 'windup'); e.attack = attack; SFX.play(attack === 'slam' ? 'charge' : 'warn');
   if (attack === 'charge') {
@@ -335,12 +356,7 @@ function updateWarden(e, dt, dxp, dist, sees) {
       face(); e.anim = 'walk';
       if (dist > 3) { e.x = clamp(e.x + e.facing * ENEMY_DEF.warden.speed * dt, e.minX, e.maxX); e.walk += dt * 3.4; }
       else e.anim = 'alert';
-      if (e.cooldown <= 0 && e.st > 0.3) {
-        let atk;
-        if (dist < BOSS.slamRange) atk = 'slam';
-        else { const pat = e.phase2 ? BOSS.patternP2 : BOSS.pattern; atk = pat[e.pat % pat.length]; e.pat++; }
-        wardenWindup(e, atk);
-      }
+      if (e.cooldown <= 0 && e.st > 0.3) wardenWindup(e, chooseBossAttack(e, dist));
       break;
     }
     case 'windup': {
@@ -354,7 +370,7 @@ function updateWarden(e, dt, dxp, dist, sees) {
       if (e.st >= dur) {
         if (e.attack === 'slam') {
           wardenSlam(e); e.impact = 1; e.exposed = BOSS.slamExpose; e.cooldown = e.phase2 ? 0.55 : 1.1;
-          if (e.phase2) { setState(e, 'windup'); e.attack = 'bolt'; e.st = 0.15; }    // OVERDRIVE: slam chains into a fan
+          if (e.phase2) { setState(e, 'windup'); e.attack = 'bolt'; e.st = 0.15; e.lastAtk = 'bolt'; e.sinceSlam = 1; }    // OVERDRIVE: slam chains into a fan
           else setState(e, 'recover');
         } else if (e.attack === 'charge') { setState(e, 'charge'); e.lungeHit = false; e.attack = 'charge'; Feel.kick(3, e.facing); SFX.play('dash'); }
         else { setState(e, 'fire'); e.shots = 2; e.shotT = 0; }
@@ -429,7 +445,24 @@ function counterAttack(e, dist) {
 }
 
 export function updateEnemies(dt) { for (const e of enemies) updateEnemy(e, dt); }
-const liveIn = a => enemies.some(e => e.alive && e.x > a.x0 && e.x < a.x1);
+/* arena membership by id (wave members) or by home position (pre-placed), never by where knock-back left them (R2-007) */
+export const inArena = (e, a) => e.arenaId ? e.arenaId === a.id : e.homeX > a.x0 && e.homeX < a.x1;
+const liveIn = a => enemies.some(e => e.alive && inArena(e, a));
+
+/** R2-006: dying inside a lockdown resets it — its wave respawns at full HP (boss included), kills of it are refunded */
+export function resetArenaOnDeath(a) {
+  if (!a) return;
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    if (e.arenaId !== a.id) continue;
+    if (!e.alive) Game.kills = Math.max(0, Game.kills - 1);
+    enemies.splice(i, 1);
+  }
+  for (const e of enemies) if (!e.arenaId && inArena(e, a) && e.alive) { e.hp = e.maxhp; e.stun = 0; e.armorT = 0; e.flinchN = 0; setState(e, 'patrol'); }
+  a.spawned = false; a.cleared = false; a.wallT = 0;
+  enemyBullets.length = 0;
+  HUD.setKills(Game.stageKills, totalEnemies()); HUD.setBoss(null);
+}
 
 /* ------------------------------------------------------------------ lockdown arenas */
 export function resetArenas() { for (const a of ARENAS) { a.spawned = false; a.cleared = false; a.wallT = 0; } Game.arena = null; }
@@ -445,7 +478,7 @@ export function updateArenas(dt) {
       if (!a.spawned) {
         a.spawned = true;
         for (const w of a.wave) {
-          const e = makeEnemy(w, enemies.length); e.flash = 0.2;
+          const e = makeEnemy({ ...w, arenaId: a.id }, nextId()); e.flash = 0.2;
           e.minX = Math.max(e.minX, a.x0 + 0.8); e.maxX = Math.min(e.maxX, a.x1 - 0.8);
           if (e.kind === 'warden') { e.state = 'intro'; e.cooldown = 1.5; e.facing = -1; }
           else { e.state = 'alert'; e.cooldown = 0.8; }

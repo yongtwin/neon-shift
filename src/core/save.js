@@ -13,6 +13,7 @@ export const SAVE_KEY = 'neonshift_save';
 export const LEGACY_KEY = 'neonshift_chips_v1';
 export const SAVE_VERSION = 2;
 export const MAX_STAGE = 2;                                   // stages 0..2
+export const BACKUP_KEY = 'neonshift_save_bak';
 
 const defaults = () => ({ v: SAVE_VERSION, chips: ['blade'], stage: 0, best: {} });
 const memStore = new Map();
@@ -54,26 +55,39 @@ export const Save = {
 
   useMemory(on = true) { this.memory = !!on; if (on) memStore.clear(); return this.load(); },
 
+  future: null,                 // a save written by a NEWER build (v > 2): its unknown fields are preserved on commit
+
   load() {
-    this.lastError = null;
-    let data = null;
+    this.lastError = null; this.future = null;
+    let data = null, parsed;
     const raw = store.get(SAVE_KEY);
     if (raw != null) {
-      try { data = sanitize(JSON.parse(raw)); } catch (err) { this.lastError = String(err); }
-      this.source = data ? 'v2' : 'corrupt';
+      try { parsed = JSON.parse(raw); } catch (err) { this.lastError = String(err); }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Number.isInteger(parsed.v) && parsed.v > SAVE_VERSION) {
+        data = sanitize({ ...parsed, v: SAVE_VERSION });                 // read what we understand, keep the rest (R2-013a)
+        this.future = parsed; this.source = 'future-v' + parsed.v;
+      } else {
+        data = sanitize(parsed);
+        this.source = data ? 'v2' : 'corrupt';
+      }
+      if (!data) store.set(BACKUP_KEY, raw);                            // never lose unreadable data silently
     }
-    if (!data && raw == null) {
+    if (!data) {                                                         // missing OR corrupt v2 → an intact v1 still counts (R2-013b)
       const old = store.get(LEGACY_KEY);
       if (old != null) {
         try { data = migrateV1(JSON.parse(old)); } catch (err) { this.lastError = String(err); }
-        if (data) { this.source = 'migrated-v1'; this.data = data; this.commit(); return this.data; }
+        if (data) { this.source = raw == null ? 'migrated-v1' : 'corrupt→v1'; this.data = data; this.commit(); return this.data; }
       }
-      this.source = 'default';
+      if (raw == null) this.source = 'default';
     }
     this.data = data || defaults();
     return this.data;
   },
-  commit() { return store.set(SAVE_KEY, JSON.stringify(this.data)); },
+  commit() {
+    const out = this.future ? { ...this.future, chips: [...new Set([...(Array.isArray(this.future.chips) ? this.future.chips : []), ...this.data.chips])],
+      stage: Math.max(Number.isInteger(this.future.stage) ? this.future.stage : 0, this.data.stage), best: { ...(this.future.best || {}), ...this.data.best } } : this.data;
+    return store.set(SAVE_KEY, JSON.stringify(out));
+  },
   reset() { this.data = defaults(); this.commit(); return this.data; },
   wipe() { store.del(SAVE_KEY); store.del(LEGACY_KEY); this.data = defaults(); this.source = 'default'; },
 

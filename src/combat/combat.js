@@ -21,7 +21,7 @@ import { HUD } from '../ui/hud.js';
    ends) and counter-attacks. Late enforcer windups (tele > 0.6) are armoured.
    So pressure is rewarded but an enemy can never be stun-locked.
    ===================================================================== */
-export const FLINCH_MAX = 3, FLINCH_RESET = 1.0, HYPER_ARMOR = 0.9;
+export const FLINCH_MAX = 2, FLINCH_RESET = 1.2, HYPER_ARMOR = 1.0;          // R2-004: the 2nd flinch in a row breaks poise
 export const dbgBoxes = [];         // hitboxes shown with F4 (only recorded while F4 is on)
 
 const _hb = { x0: 0, x1: 0, y0: 0, y1: 0 };
@@ -45,7 +45,7 @@ export function damageEnemy(e, dmg, o) {
     dmg = dmg * mul;                                                    // fractional on the boss (bar is continuous)
     if (mul < 1 && Game.time - clankT > 1.5) { clankT = Game.time; FX.text('ARMOR', e.x, e.y + e.h + 0.8, '#c8cbd8', 0.7); }
   }
-  if (e.state === 'stagger') dmg += 1;                                  // parried enemies are wide open
+  if (e.state === 'stagger' && e.kind !== 'warden') dmg += 1;           // parried enemies are wide open (not the boss: R2-001)
   e.hp -= dmg;
   e.flash = o.power >= 3 ? 0.16 : 0.12;
   e.shake = (o.hs || 0) + 0.08;                                         // victim jitters through the hit-stop
@@ -53,7 +53,7 @@ export function damageEnemy(e, dmg, o) {
   if (!armored) {
     e.stun = o.stun === undefined ? 0.25 : o.stun;
     e.flinchN++; e.flinchT = FLINCH_RESET;
-    if (e.flinchN >= FLINCH_MAX) { e.flinchN = 0; e.armorT = HYPER_ARMOR; e.counter = true; }
+    if (e.flinchN >= FLINCH_MAX) { e.flinchN = 0; e.armorT = HYPER_ARMOR; e.counter = true; e.stun = Math.min(e.stun, 0.08); }   // counter-attack almost at once
   }
   e.kvx = o.dirX * o.kb * (e.armor ? 0.3 : armored ? 0.5 : 1);
   if (o.kvy && !e.armor) e.vy = Math.max(e.vy || 0, o.kvy);
@@ -96,7 +96,7 @@ export function bladeHitCheck(S, step) {
       p.atkHits.push(e.id);
       const ix = e.x - f * e.hw * 0.6, iy = e.y + e.h * 0.55, crit = p.critT > 0;
       if (crit) { p.critT = 0; FX.text('CRITICAL!', e.x, e.y + e.h + 0.9, '#ffe06b', 0.8); Feel.screenFlash(0.18, '#fff3b8'); }
-      damageEnemy(e, S.dmg + (crit ? 3 : 0), { src: 'blade', dirX: f, kb: S.kb * (crit ? 1.5 : 1), kvy: crit ? Math.max(S.kvy, 4) : S.kvy, stun: S.stun + (crit ? 0.15 : 0),
+      damageEnemy(e, S.dmg + (crit ? (e.kind === 'warden' ? 1 : 3) : 0), { src: 'blade', dirX: f, kb: S.kb * (crit ? 1.5 : 1), kvy: crit ? Math.max(S.kvy, 4) : S.kvy, stun: S.stun + (crit ? 0.15 : 0),
         hs: S.hs + (crit ? 0.04 : 0), shake: S.shake + (crit ? 2 : 0), power: crit ? 3 : S.power, x: ix, y: iy, c1: crit ? '#ffe06b' : A.m, c2: A.l });
       if (step === 3) Feel.screenFlash(0.1, '#ffffff');
     }
@@ -137,9 +137,8 @@ export function hurtPlayer(dmg, srcX, o = {}) {
   const p = player;
   if (p.dead) return 'ignored';
   const def = o.hazard ? null : defendCheck(srcX);                     // the shield does not stop lasers / spikes
-  if (def && o.contact) {                                               // body contact into a raised shield: knock apart
-    if (def === 'parry') { doParry(o); return 'parry'; }
-    if (p.blockFlash <= 0) doBlock(o, GUARD.costContact);
+  if (def && o.contact) {                                               // body contact into a raised shield: knock apart.
+    if (p.blockFlash <= 0) doBlock(o, GUARD.costContact);               // contact is NEVER a parry (R2-001): only bolts / telegraphed melee
     return 'block';
   }
   if (def === 'parry') { doParry(o); return 'parry'; }
@@ -162,7 +161,7 @@ export function hurtPlayer(dmg, srcX, o = {}) {
 
 export function killPlayer(k = -player.facing) {
   const p = player;
-  if (!p.dead) Game.onPlayerDeath();
+  if (!p.dead) { Game.onPlayerDeath(); p.deathArena = Game.arena; }
   p.hp = 0; p.dead = true; p.deadT = 0; p.burst = false; p.inv = 99; p.dash = 0; p.shielding = false; p.charging = false;
   cancelSwing();
   p.vx = k * 3; p.vy = 6; p.flash = 0.2;
@@ -190,9 +189,12 @@ export function doParry(o) {
   if (perfect) Feel.slowmo(0.45);
   SFX.play(perfect ? 'parryPerfect' : 'parry');
   if (o.bullet) reflectBullet(o.bullet, perfect ? 6 : 3, A);            // reflect the bolt back at its shooter
-  const e = o.melee || o.contact;
-  if (e) {
+  const e = o.melee;
+  if (e && e.kind === 'warden' && (e.staggerImmune || 0) > 0) {          // boss: one stagger per STAGGER_IMMUNE s
+    e.lungeHit = true; FX.text('RESIST', e.x, e.y + e.h + 0.7, '#c8cbd8', 0.8); p.vx = -f * 8;
+  } else if (e) {
     e.kvx = -e.facing * 9; e.stun = 0; setState(e, 'stagger'); e.flash = 0.1; e.lungeHit = true;
+    if (e.kind === 'warden') e.staggerImmune = BOSS.staggerImmune;
     FX.text('STAGGER', e.x, e.y + e.h + 0.7, EN.r2, 0.8);
     Feel.stop(0.13); Feel.kick(4.5, f);
   }
@@ -207,8 +209,15 @@ export function doBlock(o, cost = GUARD.costBolt) {
   Feel.stop(0.04); Feel.kick(1.8, -f * 0.4);
   SFX.play('block');
   if (o.bullet) o.bullet.life = 0;
+  if (o.melee && o.melee.state === 'charge') {                         // the Warden charge cannot be blocked (R2-009): guard shatters
+    o.melee.lungeHit = true; p.guard = 0; p.vx = -f * 9; p.vy = 6; p.onGround = false; guardBreak(); p.inv = Math.max(p.inv, 0.3);
+    return;
+  }
   if (o.melee) { const e = o.melee; e.kvx = -e.facing * 7; setState(e, 'recover'); e.lungeHit = true; }
-  if (o.contact) { const e = o.contact; e.kvx = f * 10; e.stun = Math.max(e.stun, 0.3); p.vx = -f * 6; }   // knock apart (R-021)
+  if (o.contact) {                                                      // knock apart (R-021); never stuns the boss
+    const e = o.contact; p.vx = -f * 6;
+    if (e.kind !== 'warden') { e.kvx = f * 10; e.stun = Math.max(e.stun, 0.3); }
+  }
   if (p.guard <= 0) guardBreak();
 }
 

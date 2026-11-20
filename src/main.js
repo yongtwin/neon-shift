@@ -11,7 +11,8 @@ import { $ } from './core/util.js';
 import { FX } from './effects/fx.js';
 import { ENEMY_DEF, spawnEnemies, totalEnemies } from './enemies/enemies.js';
 import { ANCHOR, BLINK, CANNON, CHARGE_FULL, CHARGE_MIN, GUARD, MOVE, PARRY_WINDOW, PERFECT_WINDOW, SWING, player, resetPlayer } from './player/player.js';
-import { Compositor, buildArt, resizeView } from './render/render.js';
+import { Compositor, buildArt, resizeView, view } from './render/render.js';
+import { PPU } from './core/util.js';
 import { HUD } from './ui/hud.js';
 import { Screens } from './ui/screens.js';
 import { STAGES } from './levels/stages.js';
@@ -62,15 +63,16 @@ window.NS = {
   hold(k, v = true) { keys[k] = v; }, press(k, v = 1) { if (k in pressed) pressed[k] = k === 'tap' ? v : true; },   // 'tap' takes a direction ±1
   pad,                                                    // gamepad-owned input state (cleared on disconnect)
   unlockAll() { for (const c of CHIP_ORDER) player.unlocked.add(c); Save.setChips(player.unlocked); syncSlots(); HUD.setUnlocked(player.unlocked); },
-  tp(x, y = 0) { player.x = x; player.y = y; player.vx = 0; player.vy = 0; player.prevX = x; player.prevY = y; player.px = x; player.py = y; Game.snapCamera(); },
+  tp(x, y = 0) { Game.debugRun = true; player.x = x; player.y = y; player.vx = 0; player.vy = 0; player.prevX = x; player.prevY = y; player.px = x; player.py = y; Game.snapCamera(); },
   loadStage(i = 0, fresh = false) { return fresh ? Game.newRun(i) : Game.loadStage(i); },   // 0..2; false for an unknown stage
-  stageClear(immediate = true) { return Game.stageClear(immediate); },                     // finish the current stage now (tests)
+  stageClear(immediate = true) { Game.debugRun = true; return Game.stageClear(immediate); },                     // finish the current stage now (tests)
   get boss() { return Game.boss; },
   get stage() { return { index: Game.stage, ...STAGES[Game.stage], hazards: HAZARDS, t: Game.stageT }; },
   STAGES,
   /** per-stage level data (copies of the authored stage, independent of the stage being played) */
   stageData(i) { const s = STAGES[i]; return s ? JSON.parse(JSON.stringify({ id: s.id, name: s.name, worldW: s.worldW, exitX: s.exitX, checkpoints: s.checkpoints, pickups: s.pickups, arenas: s.arenas, spawns: s.spawns, hazards: s.hazards, plats: s.plats })) : null; },
   get levels() { return STAGES.map((_, i) => this.stageData(i)); },
+  get camera() { return { x: view.camX, w: view.W / PPU, h: view.H / PPU }; },     // world units: centre x + view size
   get renderer() { return Compositor.mode === 'webgl' ? 'webgl' : 'canvas'; },
   validateStage,                                                                           // reachability vs jump physics
   laserTimeToOn: h => laserTimeToOn(h, Game.stageT),

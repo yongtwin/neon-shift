@@ -2,6 +2,7 @@ import { ACCENT } from '../art/art.js';
 import { ninjaAnchors } from '../art/ninja.js';
 import { CHIPS, syncSlots, unlockChip } from '../chips/chips.js';
 import { bladeHitCheck, blinkHit, hurtPlayer, killPlayer } from '../combat/combat.js';
+import { resetArenaOnDeath } from '../enemies/enemies.js';
 import { Feel } from '../combat/feel.js';
 import { SFX } from '../core/audio.js';
 import { Game } from '../core/game.js';
@@ -184,8 +185,9 @@ export function startSwing(step, held = false) {
   p.comboStep = step; p.atkStep = step; p.atkT = 0; p.atkU = 0; p.atkDur = S.dur; p.atkPhase = 'wind'; p.atkPhaseU = 0;
   p.atkFx = false; p.atkHits.length = 0; p.atkQueued = false; p.atkHeld = held;
   p.atkFacing = p.facing; p.comboWin = 0;
-  p.cd.blade = S.dur; p.cdMax.blade = S.dur;
+  p.cd.blade = S.dur; p.cdMax.blade = S.dur; p.heldGap = held ? S.dur * 0.3 : 0;
   p.lungeT = S.wind + S.act; p.lungeV = S.lunge / p.lungeT;
+  if (p.onGround && p.atkFacing * p.vx > p.lungeV) p.vx = p.atkFacing * p.lungeV;   // R2-010: a running swing commits too
   SFX.play('slash', step);
 }
 export function updateSwing(dt) {
@@ -319,6 +321,7 @@ export function updatePlayer(dt) {
   p.comboWin = Math.max(0, p.comboWin - dt); p.atkBuf = Math.max(0, p.atkBuf - dt);
   p.xf = Math.min(1, p.xf + dt / 0.28); p.blinkBuf = Math.max(0, p.blinkBuf - dt);
   p.jumpBuf = Math.max(0, p.jumpBuf - dt); p.critT = Math.max(0, p.critT - dt); p.tapT = Math.max(0, p.tapT - dt);
+  if (!p.atkStep) p.heldGap = Math.max(0, (p.heldGap || 0) - dt);
   for (const k in p.cd) if (k !== 'shield') p.cd[k] = Math.max(0, p.cd[k] - dt);
   p.cd.shield = Math.max(0, p.parryT > 0 ? p.parryT : p.parryCd);
   if (p.flipT > 0) { p.flipT = Math.max(0, p.flipT - dt); p.rot = p.atkStep ? 0 : -(1 - p.flipT / 0.36) * TAU; if (p.flipT === 0) p.rot = 0; }
@@ -349,7 +352,7 @@ export function updatePlayer(dt) {
   }
   if (pressed.dash && p.dashCd <= 0 && !broken) doDash();
   pressed.dash = false;
-  if (pressed.attack) { if (p.atkStep) p.atkQueued = true; else p.atkBuf = ATK_BUFFER; }
+  if (pressed.attack) { if (p.atkStep) p.atkQueued = true; else p.atkBuf = p.chip === 'cannon' ? Math.max(ATK_BUFFER, p.cd.cannon + 0.05) : ATK_BUFFER; }   // R2-011b
   pressed.attack = false;
   if (pressed.blink) p.blinkBuf = 0.16;
   pressed.blink = false;
@@ -369,7 +372,7 @@ export function updatePlayer(dt) {
     if (p.chip === 'blade') {
       if (!p.atkStep && p.cd.blade <= 0) {
         if (p.atkBuf > 0) { startSwing(p.comboWin > 0 && p.comboStep > 0 && p.comboStep < 3 ? p.comboStep + 1 : 1); p.atkBuf = 0; }
-        else if (held) startSwing(1, true);                            // held J: repeated opening slash, never the finisher
+        else if (held && p.heldGap <= 0) startSwing(1, true);          // held J: repeated opening slash, never the finisher, 30 % slower
       }
     } else if (p.chip === 'cannon') {                                   // tap = shot, hold = charge, release = lance
       if (p.atkBuf > 0 && p.cd.cannon <= 0 && !p.charging) { fireCannon(); p.atkBuf = 0; p.charging = true; p.chargeT = 0; }
@@ -515,6 +518,7 @@ export function respawn() {
   p.prevX = p.x; p.prevY = p.y; p.px = p.x; p.py = p.y;
   cancelSwing(); p.comboWin = 0; p.comboStep = 0; p.dash = 0; p.shielding = false; p.guard = GUARD.max; p.guardBreakT = 0; p.charging = false;
   bullets.length = 0; enemyBullets.length = 0;
+  resetArenaOnDeath(p.deathArena); p.deathArena = null;                  // R2-006: the arena you died in resets (boss: full HP)
   Game.arena = null;                                                     // walls drop on death; re-entering re-locks
   resetScarf();
   FX.ring(p.x, p.y + 1, 2, 30, 0.35, '#ff8cbb'); FX.bits(p.x, p.y + 1.1, '#ff8cbb', 14);

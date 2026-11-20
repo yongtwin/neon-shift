@@ -73,7 +73,7 @@ window.addEventListener('keydown', e => {
   if (k === 'KeyN') { HUD.toast(SFX.toggleMusic() ? 'MUSIC ON' : 'MUSIC OFF', '#8ea3c4', 1); return; }
   if (k === 'F3') { e.preventDefault(); HUD.toggleDebug(); return; }
   if (k === 'F4') { e.preventDefault(); Game.showBoxes = !Game.showBoxes; return; }
-  if (k === 'KeyR') { if (Game.running) Game.restart(); return; }
+  if (k === 'KeyR') { if (Game.running && !Game.paused) HUD.toast('HOLD R TO RESTART THE STAGE', '#8ea3c4', 0.9); return; }   // R2-005
   if (!live()) return;                                   // action keys do nothing while paused / on the title
   if (JUMP_KEYS.includes(k)) pressed.jump = true;
   else if (k === 'ShiftLeft' || k === 'ShiftRight') pressed.dash = true;
